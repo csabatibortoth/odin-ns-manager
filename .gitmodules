@@ -1,0 +1,9 @@
+[submodule "core/njord-ns-server"]
+	path = core/njord-ns-server
+	url = C:\\Users\\Csaba\\Documents\\gitlab\\njord-ns-server
+[submodule "core/bragi-ns-client"]
+	path = core/bragi-ns-client
+	url = C:\\Users\\Csaba\\Documents\\gitlab\\bragi-ns-client
+[submodule "core/freya-ns-api"]
+	path = core/freya-ns-api
+	url = C:\\Users\\Csaba\\Documents\\gitlab\\freya-ns-api
