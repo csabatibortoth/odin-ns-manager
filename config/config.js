@@ -3,6 +3,8 @@ module.exports = {
     'companyName': 'YourCompany',
 
     'secret'  : 'Test',
+    'nsServerPort' : '53',
+    'serverIPAddress' : '127.0.0.1',
     'httpServerPort': '45451',
     'httpsServerPort': '45452',
     'httpEnabled': true,
@@ -18,7 +20,7 @@ module.exports = {
     'modelServerDataBase': 'odin-ns-manager-1',
 
     'logingEnabled': true,
-    'basicLogFolder': 'services/logservice/logs',
+    'basicLogFolder': 'C:\\Temp\\Odin\\Logs',
 
     'authEnabled': true,
 
