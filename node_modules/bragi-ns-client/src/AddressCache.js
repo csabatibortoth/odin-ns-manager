@@ -1,9 +1,14 @@
 'use strict';
 
-const _ = require('lodash');
+/**
+ * @typedef {Object} CacheEntry
+ * @property {Address[]} addresses
+ * @property {number} expiresAt - timestamp of the earliest DNS TTL expiration among the addresses
+ */
 
 class AddressCache {
     constructor() {
+        /** @type {Map<string, CacheEntry>} */
         this._cache = new Map();
     }
 
@@ -12,38 +17,44 @@ class AddressCache {
      * @returns {Address[]|undefined}
      */
     find(key) {
-        if (!this._cache.has(key)) {
+        const entry = this._cache.get(key);
+
+        if (entry === undefined) {
             return;
         }
 
-        const addresses = this._cache.get(key);
+        if (entry.expiresAt <= Date.now()) {
+            this._cache.delete(key);
 
-        if (this._isExpired(addresses)) {
             return;
         }
 
-        return addresses;
+        return entry.addresses;
     }
 
     /**
+     * Addresses are cached until the smallest TTL among them runs out.
+     * An empty list is never cached.
+     *
      * @param {string} key
      * @param {Address[]} addresses
      */
     set(key, addresses) {
-        this._cache.set(key, addresses);
-    }
+        if (addresses.length === 0) {
+            this._cache.delete(key);
 
-    /**
-     * @param {Address[]} addresses
-     * @returns {boolean}
-     * @private
-     */
-    _isExpired(addresses) {
-        if (_.isEmpty(addresses)) {
-            return true;
+            return;
         }
 
-        return addresses.some(address => address.expiredTime <= Date.now());
+        let minTtl = Infinity;
+
+        for (const {ttl} of addresses) {
+            if (ttl < minTtl) {
+                minTtl = ttl;
+            }
+        }
+
+        this._cache.set(key, {addresses, expiresAt: Date.now() + minTtl * 1000});
     }
 }
 

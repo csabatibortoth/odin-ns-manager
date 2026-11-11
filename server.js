@@ -1,51 +1,81 @@
-var nameService = require('njord-ns-server');
-var nameServer = nameService.createServer();
-var config = require('./config/config.js');
-var searchService = require('./services/serverService/searchService.js');
-var dnsClient = require('dns-client');
-const {lookup} = require('bragi-ns-client');
-var ttl = 300;
+/* Odin NS Manager v1.0.0 Server */
 
-if(config.logingEnabled) var logService = require("./services/logService/logService");
+const named = require('njord-ns-server');
+const config = require('./config/config');
+const { logService, startApi, stopApi } = require('./services/apiService/apiService');
+const searchService = require('./services/serverService/searchService');
 
-nameServer.listen(config.nsServerPort, config.serverIPAddress, function() {
-  console.log('DNS server started on ' + config.serverIPAddress + ' port ' + config.nsServerPort );
-});
+const nameServer = named.createServer({ name: config.serverName });
 
-function between(min, max) {
-  return Math.floor(
-    Math.random() * (max - min + 1) + min
-  )
+function listen(method, transport) {
+    return new Promise((resolve, reject) => {
+        nameServer.once('error', reject);
+        nameServer[method](config.nsServerPort, config.serverIPAddress, () => {
+            nameServer.off('error', reject);
+            console.log(`DNS server started on ${config.serverIPAddress} port ${config.nsServerPort} (${transport})`);
+            resolve();
+        });
+    });
 }
 
-nameServer.on('query', function(query) {
+nameServer.on('query', async (query) => {
+    if (config.type === 'DEV') console.log('DNS Query: (%s) %s', query.type(), query.name());
 
-  function test(){
+    try {
+        await searchService.resolve(query);
+        nameServer.send(query);
+    } catch (err) {
+        logService.addErrorLogErrorEntry(`DNS Query failed: (${query.type()}) ${query.name()} - `, err.stack || err);
+    }
+});
 
-  }
+nameServer.on('clientError', (err) => {
+    logService.addErrorLogErrorEntry('DNS client error: ', err.message || err);
+});
 
-  var domain = query.name();
-  var type = query.type();
-  console.log('DNS Query: %s', domain)
-  console.log('DNS Query domain type: %s', type);
-  if(config.logingEnabled) logService.addInfoLogBasicInfoEntry('DNS Query: %s', domain);
-  if(config.logingEnabled) logService.addInfoLogBasicInfoEntry('DNS Query domain type: %s', type);
+nameServer.on('uncaughtException', (err) => {
+    logService.addErrorLogErrorEntry('DNS server error: ', err.stack || err);
+});
 
+async function main() {
+    await listen('listen', 'udp');
+    if (config.nsTcpEnabled) await listen('listenTcp', 'tcp');
 
-    let client = new dnsClient();
-
-    client.setUpServers('1.1.1.1',between(20000,50000),_=>{
-        client.on("result",function(data){
-            console.log(data.answers)//{answers:[],'name-servers':[],'addtional-records':[]}
-            client.close();
-
-        });
-        client.resolve(domain,type);
+    // From here on an error of a socket is logged instead of stopping the start
+    nameServer.on('error', (err) => {
+        console.error('DNS server error:', err.message);
+        logService.addErrorLogErrorEntry('DNS server error: ', err.stack || err);
     });
 
+    console.log('Unknown names are looked up at %s', searchService.upstreamServers().join(', '));
+    for (let target = 0; target < 3; target++) logService.addLogEntry(target, 0, 'Server Started! - ', config.version);
 
+    if (config.apiEnabled) {
+        // The DNS server keeps running when the management API can not start
+        try {
+            await startApi();
+        } catch (err) {
+            console.error('Management API failed to start:', err.message);
+            logService.addErrorLogErrorEntry('Management API failed to start: ', err.stack || err);
+        }
+    }
 
+    let stopping = false;
+    const shutDown = async (signal) => {
+        if (stopping) return;
+        stopping = true;
+        logService.addInfoLogBasicInfoEntry('Server stopping - ', signal);
+        nameServer.close();
+        await stopApi().catch(() => {});
+        process.exit(0);
+    };
+    process.on('SIGINT', shutDown);
+    process.on('SIGTERM', shutDown);
+}
 
-
-
+main().catch((err) => {
+    console.error('Server failed to start:', err.message);
+    logService.addErrorLogErrorEntry('Server failed to start: ', err.stack || err);
+    // Give the file logger a moment to flush before exiting.
+    setTimeout(() => process.exit(1), 500);
 });

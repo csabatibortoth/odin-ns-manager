@@ -89,7 +89,8 @@ describe('Func: Lookup::_innerResolve', () => {
             assert.isTrue(tasksManagerDoneSpy.calledOnce);
             assert.isTrue(tasksManagerDoneSpy.calledWithExactly(`${addresses.INET_HOST1}_${ipVersion}`));
 
-            assert.isTrue(taskRunSpy.calledOnce);
+            // `run` is idempotent: the task creator and the parallel caller share one DNS query.
+            assert.isTrue(taskRunSpy.calledTwice);
 
             addressCacheFindSpy.restore();
             addressCacheSetSpy.restore();
@@ -120,14 +121,14 @@ describe('Func: Lookup::_innerResolve', () => {
 
         const firstRequestResult = lookup._innerResolve(addresses.INVALID_HOST, ipVersion)
             .catch(err => {
-                assert.isPrototypeOf(err, Error);
+                assert.instanceOf(err, Error);
                 assert.oneOf(err.code, [dns.NOTFOUND, dns.SERVFAIL]);
                 resolveErrorCount++;
             });
 
         const secondRequestResult = lookup._innerResolve(addresses.INVALID_HOST, ipVersion)
             .catch(err => {
-                assert.isPrototypeOf(err, Error);
+                assert.instanceOf(err, Error);
                 assert.oneOf(err.code, [dns.NOTFOUND, dns.SERVFAIL]);
                 resolveErrorCount++;
             });
@@ -151,7 +152,8 @@ describe('Func: Lookup::_innerResolve', () => {
                 assert.isTrue(tasksManagerDoneSpy.calledOnce);
                 assert.isTrue(tasksManagerDoneSpy.calledWithExactly(`${addresses.INVALID_HOST}_${ipVersion}`));
 
-                assert.isTrue(taskRunSpy.calledOnce);
+                // `run` is idempotent: the task creator and the parallel caller share one DNS query.
+                assert.isTrue(taskRunSpy.calledTwice);
 
                 addressCacheFindSpy.restore();
                 addressCacheSetSpy.restore();

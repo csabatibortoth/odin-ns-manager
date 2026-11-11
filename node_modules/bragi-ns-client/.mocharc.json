@@ -1,0 +1,6 @@
+{
+  "reporter": "spec",
+  "slow": 50,
+  "check-leaks": true,
+  "recursive": true
+}

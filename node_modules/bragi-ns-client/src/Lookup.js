@@ -1,13 +1,24 @@
 'use strict';
 
-const dns = require('dns');
-
-const _  = require('lodash');
-const rr = require('rr');
+const dns = require('node:dns');
 
 const AddressCache = require('./AddressCache');
 const TasksManager = require('./TasksManager');
 const ResolveTask  = require('./ResolveTask');
+
+/**
+ * @param {*} value
+ * @returns {boolean}
+ */
+const isPlainObject = value => {
+    if (value === null || typeof value !== 'object') {
+        return false;
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+
+    return prototype === Object.prototype || prototype === null;
+};
 
 class Lookup {
     /**
@@ -24,18 +35,12 @@ class Lookup {
         return 6;
     }
 
-    /**
-     * @returns {number}
-     */
-    static get MAX_AMOUNT_OF_RESOLVE_TRIES() {
-        return 100;
-    }
-
     constructor() {
         this._addressCache = new AddressCache();
         this._tasksManager = new TasksManager();
 
-        this._amountOfResolveTries = {};
+        // Round-robin position per cached addresses list. Entries go away together with the list.
+        this._cursors = new WeakMap();
     }
 
     /**
@@ -50,16 +55,16 @@ class Lookup {
      * @returns {{}|undefined}
      */
     run(hostname, options, callback) {
-        if (_.isFunction(options)) {
+        if (typeof options === 'function') {
             callback = options;
             options  = {};
-        } else if (_.isNumber(options)) {
+        } else if (typeof options === 'number') {
             options = {family: options};
-        } else if (!_.isPlainObject(options)) {
+        } else if (!isPlainObject(options)) {
             throw new Error('options must be an object or an ip version number');
         }
 
-        if (!_.isFunction(callback)) {
+        if (typeof callback !== 'function') {
             throw new Error('callback param must be a function');
         }
 
@@ -78,7 +83,7 @@ class Lookup {
             return {};
         }
 
-        if (!_.isString(hostname)) {
+        if (typeof hostname !== 'string') {
             throw new Error('hostname must be a string');
         }
 
@@ -107,147 +112,130 @@ class Lookup {
      * @returns {Promise}
      * @private
      */
-    _resolve(hostname, options) {
-        this._amountOfResolveTries[hostname] = this._amountOfResolveTries[hostname] || 0;
+    async _resolve(hostname, options) {
+        let records;
 
-        return this._innerResolve(hostname, options.family)
-            .then(records => {
-                // Corner case branch.
-                //
-                // Intensively calling `lookup` method in parallel can produce situations
-                // when DNS TTL for particular IP has been exhausted,
-                // but task queue within NodeJS is full of `resolved` callbacks.
-                // No way to skip them or update DNS cache before them.
-                //
-                // The work around is return undefined for that callbacks and client code should repeat `lookup` call.
-                if (!records) {
-                    if (this._amountOfResolveTries[hostname] >= Lookup.MAX_AMOUNT_OF_RESOLVE_TRIES) {
-                        this._amountOfResolveTries[hostname] = 0;
+        try {
+            records = await this._innerResolve(hostname, options.family);
+        } catch (error) {
+            if (error.code === dns.NODATA) {
+                throw this._makeNotFoundError(hostname, error.syscall);
+            }
 
-                        throw new Error(`Cannot resolve host '${hostname}'. Too deep recursion.`);
-                    }
+            throw error;
+        }
 
-                    this._amountOfResolveTries[hostname] += 1;
+        if (options.all) {
+            return records.map(({address, family}) => ({address, family}));
+        }
 
-                    return this._resolve(hostname, options);
-                }
+        if (records.length === 0) {
+            const error = new Error(
+                `Empty "${options.family === Lookup.IPv4 ? 'A' : 'AAAA'}" records list for ${hostname}`
+            );
 
-                this._amountOfResolveTries[hostname] = 0;
+            error.hostname = hostname;
 
-                if (options.all) {
-                    return records.map(record => {
-                        return {
-                            address: record.address,
-                            family:  record.family
-                        };
-                    });
-                } else {
-                    if (_.isEmpty(records)) {
-                        const errorMessage = `Empty "${options.family === 4 ? 'A' : 'AAAA'}" records list for ` +
-                            hostname;
+            throw error;
+        }
 
-                        const error = new Error(errorMessage);
-                        error.hostname = hostname;
+        const {address, family} = this._nextRecord(records);
 
-                        throw error;
-                    }
-
-                    const record = rr(records);
-
-                    return {
-                        address: record.address,
-                        family:  record.family
-                    };
-                }
-            })
-            .catch(error => {
-                if (error.code === dns.NODATA) {
-                    throw this._makeNotFoundError(hostname, error.syscall);
-                }
-
-                throw error;
-            });
+        return {address, family};
     }
 
     /**
+     * Returns cached addresses, or waits for the DNS query for this host and IP version.
+     * Parallel calls share a single query.
+     *
      * @param {string} hostname
      * @param {number} ipVersion
-     * @returns {Promise}
+     * @returns {Promise<Address[]>}
      * @private
      */
     _innerResolve(hostname, ipVersion) {
         const key = `${hostname}_${ipVersion}`;
 
-        return new Promise((resolve, reject) => {
-            const cachedAddresses = this._addressCache.find(key);
+        const cachedAddresses = this._addressCache.find(key);
 
-            if (cachedAddresses) {
-                return resolve(cachedAddresses);
-            }
+        if (cachedAddresses) {
+            return Promise.resolve(cachedAddresses);
+        }
 
-            let task = this._tasksManager.find(key);
+        const runningTask = this._tasksManager.find(key);
 
-            if (!task) {
-                task = new ResolveTask(hostname, ipVersion);
+        if (runningTask) {
+            return runningTask.run();
+        }
 
-                this._tasksManager.add(key, task);
+        const task = new ResolveTask(hostname, ipVersion);
 
-                task.on('addresses', addresses => {
-                    this._addressCache.set(key, addresses);
+        this._tasksManager.add(key, task);
 
-                    this._tasksManager.done(key);
-                });
+        const pending = task.run();
 
-                task.once('error', () => this._tasksManager.done(key));
+        // Attached first, so the cache is filled and the task is released before any caller continues.
+        pending.then(
+            addresses => {
+                this._addressCache.set(key, addresses);
+                this._tasksManager.done(key);
+            },
+            () => this._tasksManager.done(key)
+        );
 
-                task.run();
-            }
+        return pending;
+    }
 
-            task.on('error', error => reject(error));
-            task.on('addresses', addresses => resolve(addresses));
-        });
+    /**
+     * Picks records one by one in a round-robin manner.
+     *
+     * @param {Address[]} records - not empty list
+     * @returns {Address}
+     * @private
+     */
+    _nextRecord(records) {
+        const cursor = this._cursors.get(records) || 0;
+
+        this._cursors.set(records, (cursor + 1) % records.length);
+
+        return records[cursor];
     }
 
     /**
      * @param {string} hostname
      * @param {Object} options
-     * @param {number} options.family
      * @param {boolean} options.all
+     * @returns {Promise}
      * @private
      */
-    _resolveBoth(hostname, options) {
-        const resolve = (hostname, options) => {
-            return this._resolve(hostname, options).catch(error => {
-                if (error.code === dns.NOTFOUND) {
-                    return [];
-                }
-
-                throw error;
-            });
-        };
-
-        return Promise.all([
-            resolve(hostname, Object.assign({}, options, {family: Lookup.IPv4})),
-            resolve(hostname, Object.assign({}, options, {family: Lookup.IPv6}))
-        ]).then(records => {
-            const [ipv4records, ipv6records] = records;
-
-            if (options.all) {
-                const result = ipv4records.concat(ipv6records);
-
-                if (_.isEmpty(result)) {
-                    throw this._makeNotFoundError(hostname);
-                }
-
-                return result;
-            } else if (!_.isEmpty(ipv4records)) {
-                return ipv4records;
-            } else if (!_.isEmpty(ipv6records)) {
-                return ipv6records;
+    async _resolveBoth(hostname, options) {
+        const resolve = family => this._resolve(hostname, {...options, family}).catch(error => {
+            if (error.code === dns.NOTFOUND) {
+                return options.all ? [] : null;
             }
 
-            throw this._makeNotFoundError(hostname);
+            throw error;
         });
+
+        const [ipv4result, ipv6result] = await Promise.all([resolve(Lookup.IPv4), resolve(Lookup.IPv6)]);
+
+        if (options.all) {
+            const records = ipv4result.concat(ipv6result);
+
+            if (records.length === 0) {
+                throw this._makeNotFoundError(hostname);
+            }
+
+            return records;
+        }
+
+        const record = ipv4result || ipv6result;
+
+        if (!record) {
+            throw this._makeNotFoundError(hostname);
+        }
+
+        return record;
     }
 
     // noinspection JSMethodCanBeStatic

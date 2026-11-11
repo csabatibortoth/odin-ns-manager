@@ -20,29 +20,28 @@ describe('Unit: AddressCache::find', () => {
         assert.isUndefined(result);
     });
 
-    it('must return undefined, cuz there are only expired addresses within cache for particular host', () => {
-        const cachedAddresses = [{
-            expiredTime: Date.now() - 1
-        }];
-
-        addressCache._cache.set(addresses.INET_HOST1, cachedAddresses);
+    it('must return undefined and drop the entry, cuz addresses for particular host are expired', () => {
+        addressCache._cache.set(addresses.INET_HOST1, {
+            addresses: [{address: '1.2.3.4'}],
+            expiresAt: Date.now() - 1
+        });
 
         const result = addressCache.find(addresses.INET_HOST1);
 
         assert.isUndefined(result);
+        assert.isFalse(addressCache._cache.has(addresses.INET_HOST1));
     });
 
-    it('must return addresses array, cuz there are only not-expired addresses within cache for particular host', () => {
-        const cachedAddress = {
-            expiredTime: Date.now() * 2
-        };
+    it('must return addresses array, cuz addresses for particular host are not expired', () => {
+        const cachedAddresses = [{address: '1.2.3.4'}];
 
-        const cachedAddresses = [cachedAddress];
-
-        addressCache._cache.set(addresses.INET_HOST1, cachedAddresses);
+        addressCache._cache.set(addresses.INET_HOST1, {
+            addresses: cachedAddresses,
+            expiresAt: Date.now() * 2
+        });
 
         const result = addressCache.find(addresses.INET_HOST1);
 
-        assert.deepEqual(result, cachedAddresses);
+        assert.strictEqual(result, cachedAddresses);
     });
 });

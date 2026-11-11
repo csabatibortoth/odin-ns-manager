@@ -36,7 +36,6 @@ describe('Unit: Lookup::_resolve', () => {
         expectedErrorMessage.code     = dns.NOTFOUND;
         expectedErrorMessage.errno    = dns.NOTFOUND;
 
-        const expectedNumberOfResolveTriesAfterError = 0;
 
         makeNotFoundErrorStub = sinon.spy(Lookup.prototype, '_makeNotFoundError');
         innerResolveStub      = sinon.stub(Lookup.prototype, '_innerResolve').rejects(err);
@@ -51,8 +50,6 @@ describe('Unit: Lookup::_resolve', () => {
 
                 assert.isTrue(makeNotFoundErrorStub.calledOnce);
                 assert.isTrue(makeNotFoundErrorStub.calledWithExactly(hostname, error.syscall));
-
-                assert.strictEqual(lookup._amountOfResolveTries[hostname], expectedNumberOfResolveTriesAfterError);
 
                 done();
             });
@@ -75,7 +72,6 @@ describe('Unit: Lookup::_resolve', () => {
             const expectedError = new Error(`Empty "${testCase.family === 4 ? 'A' : 'AAAA'}" records list for ` +
                 hostname);
             expectedError.hostname = hostname;
-            const expectedNumberOfResolveTriesAfterError = 0;
 
             innerResolveStub  = sinon.stub(Lookup.prototype, '_innerResolve').resolves([]);
 
@@ -85,8 +81,6 @@ describe('Unit: Lookup::_resolve', () => {
                     assert.strictEqual(error.message, expectedError.message);
                     assert.strictEqual(error.hostname, expectedError.hostname);
 
-                    assert.strictEqual(lookup._amountOfResolveTries[hostname], expectedNumberOfResolveTriesAfterError);
-
                     done();
                 });
         });
@@ -95,7 +89,6 @@ describe('Unit: Lookup::_resolve', () => {
     it('must correct rejects with original error', done => {
         const expectedError = new Error('expected error message');
 
-        const expectedNumberOfResolveTriesAfterError = 0;
 
         makeNotFoundErrorStub = sinon.spy(Lookup.prototype, '_makeNotFoundError');
         innerResolveStub      = sinon.stub(Lookup.prototype, '_innerResolve').rejects(expectedError);
@@ -107,30 +100,6 @@ describe('Unit: Lookup::_resolve', () => {
 
                 assert.isTrue(makeNotFoundErrorStub.notCalled);
 
-                assert.strictEqual(lookup._amountOfResolveTries[hostname], expectedNumberOfResolveTriesAfterError);
-
-                done();
-            });
-    });
-
-    it('must go into recursion if there is no error and records param equals to undefined', done => {
-        const expectedNumberOfResolveTriesAfterRecursion = 0;
-
-        makeNotFoundErrorStub = sinon.spy(Lookup.prototype, '_makeNotFoundError');
-        innerResolveStub      = sinon.stub(Lookup.prototype, '_innerResolve').resolves(undefined);
-
-        lookup._resolve(hostname, {family: 4})
-            .catch(error => {
-                assert.instanceOf(error, Error);
-                assert.strictEqual(
-                    error.message,
-                    `Cannot resolve host '${hostname}'. Too deep recursion.`
-                );
-
-                assert.isTrue(makeNotFoundErrorStub.notCalled);
-
-                assert.strictEqual(lookup._amountOfResolveTries[hostname], expectedNumberOfResolveTriesAfterRecursion);
-
                 done();
             });
     });
@@ -141,7 +110,6 @@ describe('Unit: Lookup::_resolve', () => {
             {address: 2, family: 4}
         ];
 
-        const expectedNumberOfResolveTriesAfterCorrectResolve = 0;
 
         makeNotFoundErrorStub = sinon.spy(Lookup.prototype, '_makeNotFoundError');
         innerResolveStub      = sinon.stub(Lookup.prototype, '_innerResolve').resolves(records);
@@ -159,11 +127,6 @@ describe('Unit: Lookup::_resolve', () => {
                 assert.deepEqual(resolve2, {address: records[1].address, family: records[1].family});
 
                 assert.deepEqual(resolve3, {address: records[0].address, family: records[0].family});
-
-                assert.strictEqual(
-                    lookup._amountOfResolveTries[hostname],
-                    expectedNumberOfResolveTriesAfterCorrectResolve
-                );
             });
     });
 
@@ -179,7 +142,6 @@ describe('Unit: Lookup::_resolve', () => {
             };
         });
 
-        const expectedNumberOfResolveTriesAfterCorrectResolve = 0;
 
         makeNotFoundErrorStub = sinon.spy(Lookup.prototype, '_makeNotFoundError');
         innerResolveStub      = sinon.stub(Lookup.prototype, '_innerResolve').resolves(records);
@@ -187,11 +149,6 @@ describe('Unit: Lookup::_resolve', () => {
         return lookup._resolve(hostname, {all: true, family: 4})
             .then(results => {
                 assert.deepEqual(results, expectedRecords);
-
-                assert.strictEqual(
-                    lookup._amountOfResolveTries[hostname],
-                    expectedNumberOfResolveTriesAfterCorrectResolve
-                );
             });
     });
 });
