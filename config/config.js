@@ -13,7 +13,7 @@ module.exports = Object.freeze({
     companyName: env.ODIN_COMPANY_NAME || 'YourCompany',
 
     secret: env.ODIN_SECRET || 'Test',
-    version: '1.0.0',
+    version: require('../package.json').version,
     type: env.ODIN_TYPE || 'DEV',
 
     // DNS server
