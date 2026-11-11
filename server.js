@@ -1,4 +1,4 @@
-/* Odin NS Manager v1.0.0 Server */
+/* Odin NS Manager Server */
 
 const named = require('njord-ns-server');
 const config = require('./config/config');
