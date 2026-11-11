@@ -1,6 +1,6 @@
 'use strict';
 
-const assert = require('assert');
+const assert = require('node:assert');
 
 class TasksManager {
     constructor() {
@@ -9,7 +9,7 @@ class TasksManager {
 
     /**
      * @param {string} key
-     * @returns {ResolveTask}
+     * @returns {ResolveTask|undefined}
      */
     find(key) {
         return this._tasks.get(key);

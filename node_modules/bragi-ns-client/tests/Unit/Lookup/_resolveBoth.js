@@ -115,7 +115,7 @@ describe('Unit: Lookup::_resolveBoth', () => {
                     if (options.all) {
                         resolve([]);
                     } else {
-                        resolve({});
+                        resolve(null);
                     }
                 });
             });
@@ -212,7 +212,7 @@ describe('Unit: Lookup::_resolveBoth', () => {
         const options = {all: false};
 
         const ipv4records = [['1.2.3.4', 4]];
-        const ipv6records = [[]];
+        const ipv6records = null;
 
         const resolveStub = sinon.stub(lookup, '_resolve');
         resolveStub.onCall(0).callsFake(() => {
@@ -254,7 +254,7 @@ describe('Unit: Lookup::_resolveBoth', () => {
     it('must return IPv6 address that was found with {all: false} option', () => {
         const options = {all: false};
 
-        const ipv4records = [];
+        const ipv4records = null;
         const ipv6records = ['2001:0db8:85a3:0000:0000:8a2e:0370:7334', 6];
 
         const resolveStub = sinon.stub(lookup, '_resolve');

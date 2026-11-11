@@ -1,5 +1,21 @@
 # Changelog
 
+### 2.0.0
+
+BREAKING CHANGES:
+
+- Node.js 20 or newer is required
+
+IMPROVEMENTS:
+
+- No runtime dependencies anymore (`lodash` and `rr` were removed)
+- Parallel lookups of the same host share one promise instead of adding event listeners per call
+- Cache expiration is checked in constant time, expired entries are removed from the cache
+- Removed the per-hostname retry counter that was growing with every new hostname
+- Dev dependencies were bumped (mocha 12, eslint 10, chai 6, sinon 22), `istanbul` was replaced with `c8`
+- npm scripts work on Windows
+
+
 ### 1.0.4
 
 IMPROVEMENTS:

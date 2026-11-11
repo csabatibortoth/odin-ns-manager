@@ -5,16 +5,12 @@
  * @property {string} address - IPv4 or IPv6 address
  * @property {number} ttl - IP DNS TTL
  * @property {number} family - IP family
- * @property {number} expiredTime - DNS TTL expiration timestamp
  */
 
-const assert         = require('assert');
-const dns            = require('dns');
-const {EventEmitter} = require('events');
+const assert              = require('node:assert');
+const {promises: resolver} = require('node:dns');
 
-const _ = require('lodash');
-
-class ResolveTask extends EventEmitter {
+class ResolveTask {
     /**
      * @returns {number}
      */
@@ -34,10 +30,8 @@ class ResolveTask extends EventEmitter {
      * @param {number} ipVersion
      */
     constructor(hostname, ipVersion) {
-        super();
-
         assert(
-            _.isString(hostname) && hostname.length > 0,
+            typeof hostname === 'string' && hostname.length > 0,
             `hostname must be not empty string, '${hostname}' has been provided.`
         );
 
@@ -48,37 +42,36 @@ class ResolveTask extends EventEmitter {
 
         this._hostname  = hostname;
         this._ipVersion = ipVersion;
-        this._resolver  = ipVersion === ResolveTask.IPv4 ? dns.resolve4 : dns.resolve6;
-
-        this._resolved = this._resolved.bind(this);
-
-        this.setMaxListeners(Infinity);
-    }
-
-    run() {
-        this._resolver(this._hostname, {ttl: true}, this._resolved);
+        this._resolver  = ipVersion === ResolveTask.IPv4 ? resolver.resolve4 : resolver.resolve6;
+        this._promise   = undefined;
     }
 
     /**
-     * @param {Error} error
+     * Starts resolving on the first call. Every call returns the same promise,
+     * so any number of callers can wait for a single DNS query.
+     *
+     * @returns {Promise<Address[]>}
+     */
+    run() {
+        this._promise ??= this._resolver(this._hostname, {ttl: true})
+            .then(addresses => this._resolved(addresses));
+
+        return this._promise;
+    }
+
+    /**
      * @param {Address[]} addresses
-     * @emits ResolveTask#error
-     * @emits ResolveTask#addresses array of addresses
+     * @returns {Address[]}
      * @private
      */
-    _resolved(error, addresses) {
-        if (error) {
-            return this.emit('error', error);
-        }
-
+    _resolved(addresses) {
         assert(Array.isArray(addresses), 'addresses must be an array.');
 
-        addresses.forEach(address => {
-            address.family      = this._ipVersion;
-            address.expiredTime = Date.now() + address.ttl * 1000;
-        });
+        for (const address of addresses) {
+            address.family = this._ipVersion;
+        }
 
-        this.emit('addresses', addresses);
+        return addresses;
     }
 }
 

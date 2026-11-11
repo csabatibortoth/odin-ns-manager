@@ -1,192 +1,272 @@
-# dns-lookup-cache - DNS cache to replace NodeJS `dns.lookup` standard method
+# bragi-ns-client
 
-[![NPM version](https://img.shields.io/npm/v/dns-lookup-cache.svg)](https://www.npmjs.com/package/dns-lookup-cache)
-[![Release Status](https://github.com/LCMApps/lcm-requester/workflows/NPM%20Release/badge.svg)](https://github.com/LCMApps/dns-lookup-cache/releases)
-[![Build Status](https://travis-ci.org/LCMApps/dns-lookup-cache.svg?branch=master)](https://travis-ci.org/LCMApps/dns-lookup-cache)
-[![Coverage Status](https://coveralls.io/repos/github/LCMApps/dns-lookup-cache/badge.svg?branch=master)](https://coveralls.io/github/LCMApps/dns-lookup-cache?branch=master)
+A drop-in replacement for the Node.js `dns.lookup` method that caches addresses for their DNS TTL and never
+touches the libuv thread pool.
 
-## Super simple to use
-
-```js
-const request = require('request');
-const {lookup} = require('dns-lookup-cache');
-
-// With "request" module
-
-request({
-    url: 'http://google.com',
-    method: 'GET',
-    lookup: lookup
-}, (error, response, body) => {
-    // ...
-});
-
-// Direct usage
-
-lookup('google.com', {}, (error, address, family) => {
-    // ...
-});
-```
+- **No thread pool** – uses `dns.resolve4` / `dns.resolve6` instead of `getaddrinfo`
+- **TTL aware** – addresses are cached exactly as long as the DNS record allows
+- **Round-robin** – every call returns the next address of the host
+- **One query per host** – parallel lookups of the same host share a single DNS query
+- **Zero dependencies**
 
 ## Table of contents
 
 - [Motivation](#motivation)
-- [How to use](#howtouse)
-- [Inner implementation](#implementation)
-- [Examples](#examples)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [API](#api)
+- [Errors](#errors)
+- [Round-robin](#round-robin)
+- [Implementation](#implementation)
+- [Development](#development)
+- [Credits](#credits)
+- [License](#license)
 
 ---
 
 ## Motivation
 
-The main idea behind this package is eliminate NodeJS event loop usage when you do network request.
-See [NodeJS DNS implementation](https://nodejs.org/api/dns.html#dns_implementation_considerations) to understand the problem with `dns.lookup`.
+`dns.lookup` is what `http`, `https`, `net` and most HTTP clients use to turn a hostname into an IP address.
+It calls `getaddrinfo`, which is a synchronous system call, so Node.js runs it on the libuv thread pool. The pool has
+only four threads by default and is shared with file system and crypto operations. Under load, slow DNS responses
+occupy those threads and everything else has to wait.
+See [Node.js DNS implementation considerations](https://nodejs.org/api/dns.html#implementation-considerations).
 
+`dns.lookup` also does not cache anything: every new connection asks the system resolver again.
+
+This package resolves hostnames over the network with `dns.resolve4` / `dns.resolve6`, which do not use the thread
+pool, and keeps the answers in memory until their DNS TTL runs out.
 
 [back to top](#table-of-contents)
 
 ---
 
-## How to use
+## Requirements
 
-This module supports almost the same params as `dns.lookup` does. Concretely, you can pass `options` object as a second param, and
-set:
-- `family` to `4` or `6`
-- `all` flag to `true`/`false` if you want/don't want get all IP addresses at once.
+Node.js 20 or newer.
 
-Because this implementation does not use `getaddrinfo` method, the `hints` param is not supported.
+[back to top](#table-of-contents)
 
-The `verbatim` param is not supported for now. If you will not specify any family you will get IPv4 addresses first and IPv6 addresses second.
- 
-The `callback` function works the same way as a standard method.
+---
 
-The `error` object would have all fields the standard implementation's error object has.
+## Installation
 
-NodeJS `dns.lookup`:
-```javascript
-> const dns = require('dns');
-> dns.lookup('host-doesnot-support-ipv6', {family: 6}, console.log)
-
-> { Error: getaddrinfo ENOTFOUND host-doesnot-support-ipv6
-    at errnoException (dns.js:55:10)
-    at GetAddrInfoReqWrap.onlookup [as oncomplete] (dns.js:97:26)
-  code: 'ENOTFOUND',
-  errno: 'ENOTFOUND',
-  syscall: 'getaddrinfo',
-  hostname: 'host-doesnot-support-ipv6' }
-
+```sh
+npm install bragi-ns-client
 ```
 
-`dns-lookup-cache`
-```javascript
-> const {lookup} = require('dns-lookup-cache');
-> lookup('host-doesnot-support-ipv6', {family: 6}, console.log)
+or straight from GitHub:
 
-> { Error: queryAaaa ENOTFOUND host-doesnot-support-ipv6
-      at makeNotFoundError (/path/dns-lookup-cache/src/Lookup.js:182:19)
-      at ipv6AddressesTable.resolve (/path/dns-lookup-cache/src/Lookup.js:147:37)
-      at Immediate.setImmediate [as _onImmediate] (/path/dns-lookup-cache/src/IpAddressesTable.js:70:48)
-      at runCallback (timers.js:773:18)
-      at tryOnImmediate (timers.js:734:5)
-      at processImmediate [as _immediateCallback] (timers.js:711:5)
-    hostname: 'host-doesnot-support-ipv6',
-    syscall: 'queryAaaa',
-    code: 'ENOTFOUND',
-    errno: 'ENOTFOUND' }
+```sh
+npm install csabatibortoth/bragi-ns-client
 ```
 
-If you are looking for `IPv4` addresses only, explicitly specify param `{family: 4}`. In that case, you will avoid 
-spending time on useless searching for `IPv6`. Apply the same technique if you are looking for `IPv6` addresses only. 
+[back to top](#table-of-contents)
 
-Under the hood, `lookup` method has Round-robin algorithm. It means that if particular hostname resolves to several addresses
-it will return new address every time you call that function. For example:
-```javascript
-// hostname: example.com
-// resolves to: [1.2.3.4, 5.6.7.8, 9.10.11.12]
+---
 
-lookup('example.com', {family: 4}, (error, address, family) => {
-   // address === "1.2.3.4"
-   // family === 4
+## Quick start
+
+Pass `lookup` to anything that accepts a custom `lookup` function:
+
+```js
+const https = require('node:https');
+const {lookup} = require('bragi-ns-client');
+
+// One request
+https.get('https://example.com', {lookup}, response => {
+    // ...
 });
 
-lookup('example.com', {family: 4}, (error, address, family) => {
-   // address === "5.6.7.8"
-   // family === 4
+// Every request made through an agent
+const agent = new https.Agent({keepAlive: true, lookup});
+
+https.get('https://example.com', {agent}, response => {
+    // ...
 });
+```
+
+```js
+const net = require('node:net');
+const {lookup} = require('bragi-ns-client');
+
+const socket = net.connect({host: 'example.com', port: 80, lookup});
+```
+
+Or call it directly:
+
+```js
+const {lookup} = require('bragi-ns-client');
 
 lookup('example.com', {family: 4}, (error, address, family) => {
-   // address === "9.10.11.12"
-   // family === 4
-});
-
-lookup('example.com', {family: 4}, (error, address, family) => {
-   // address === "1.2.3.4"
-   // family === 4
+    // address === '93.184.216.34'
+    // family === 4
 });
 ```
 
 [back to top](#table-of-contents)
 
 ---
+
+## API
+
+### `lookup(hostname[, options], callback)`
+
+Has the same signature as [`dns.lookup`](https://nodejs.org/api/dns.html#dnslookuphostname-options-callback).
+
+| Param            | Type                 | Description                                                                |
+|------------------|----------------------|----------------------------------------------------------------------------|
+| `hostname`       | `string`             | Host to resolve                                                            |
+| `options`        | `Object` or `number` | Optional. A number is treated as `family`                                  |
+| `options.family` | `4` or `6`           | IP version to look for. Both are queried if it is not set, IPv4 goes first |
+| `options.all`    | `boolean`            | Return all addresses instead of one. Default: `false`                      |
+| `callback`       | `Function`           | `(error, address, family)`, or `(error, addresses)` if `all` is `true`     |
+
+```js
+lookup('example.com', {all: true}, (error, addresses) => {
+    // IPv4 addresses are listed first, then IPv6.
+    //
+    // addresses === [
+    //     {address: '1.2.3.4', family: 4},
+    //     {address: '5.6.7.8', family: 4},
+    //     {address: '2001:db8::1', family: 6}
+    // ]
+});
+```
+
+```js
+lookup('example.com', (error, address, family) => {
+    // IPv4 address if the host has one, IPv6 address otherwise.
+});
+```
+
+```js
+lookup('example.com', 6, (error, address, family) => {
+    // IPv6 only. Fails with ENOTFOUND if the host has no AAAA records.
+});
+```
+
+If you only need one IP version, set `family` explicitly. It saves a useless DNS query for the other one.
+
+### Differences from `dns.lookup`
+
+- `hints`, `order` and `verbatim` options are not supported. Without `family` IPv4 addresses always go first.
+- `/etc/hosts` and other OS level resolver configuration (for example `nsswitch.conf`) are not used, because
+  `getaddrinfo` is not called. Hosts that exist only there, including `localhost` on some systems, cannot be
+  resolved.
+- Invalid arguments are reported with a plain `Error` thrown synchronously.
+- A falsy `hostname` produces `null` (or `[]` with `all: true`) without an error, the same way `dns.lookup` does.
+
+[back to top](#table-of-contents)
+
+---
+
+## Errors
+
+The error object has the same fields as the one `dns.lookup` produces, only `syscall` is different.
+
+Node.js `dns.lookup`:
+
+```js
+dns.lookup('host-without-ipv6.example', {family: 6}, console.log);
+
+// Error: getaddrinfo ENOTFOUND host-without-ipv6.example
+//   code: 'ENOTFOUND',
+//   errno: 'ENOTFOUND',
+//   syscall: 'getaddrinfo',
+//   hostname: 'host-without-ipv6.example'
+```
+
+`bragi-ns-client`:
+
+```js
+lookup('host-without-ipv6.example', {family: 6}, console.log);
+
+// Error: queryAaaa ENOTFOUND host-without-ipv6.example
+//   code: 'ENOTFOUND',
+//   errno: 'ENOTFOUND',
+//   syscall: 'queryAaaa',
+//   hostname: 'host-without-ipv6.example'
+```
+
+Failed lookups are not cached, the next call sends a new DNS query.
+
+[back to top](#table-of-contents)
+
+---
+
+## Round-robin
+
+If a hostname resolves to several addresses, every call returns the next one:
+
+```js
+// example.com resolves to [1.2.3.4, 5.6.7.8, 9.10.11.12]
+
+lookup('example.com', {family: 4}, (error, address) => {
+    // address === '1.2.3.4'
+});
+
+lookup('example.com', {family: 4}, (error, address) => {
+    // address === '5.6.7.8'
+});
+
+lookup('example.com', {family: 4}, (error, address) => {
+    // address === '9.10.11.12'
+});
+
+lookup('example.com', {family: 4}, (error, address) => {
+    // address === '1.2.3.4'
+});
+```
+
+The order starts over when the cached addresses expire and the host is resolved again.
+
+[back to top](#table-of-contents)
+
+---
+
 ## Implementation
 
-Under the hood, this package uses `dns.resolve4` and `dns.resolve6` methods with `{ttl: true}` param.
-It caches addresses for that particular hostname for DNS TTL time and returns one address if you specified `{all: false}` (default value)
-and array of addresses if `{all: true}`.
-
-If you didn't specify family type (`{family: 4}` or `{family: 6}`) the method searches for addresses of `{family: 4}` and `{family: 6}` in parallel.
-After that, if you specified `{all: true}` it returns an array in form `[[...IPv4],[...IPv6]]`, in other case it returns `IPv4` or `IPv6` address.
-(`IPv4` has more priority).
-
-[back to top](#table-of-contents)
-
----
-## Examples
-
-```javascript
-lookup('hostname', {all: true}, (error, results) => {
-   // results is an array that contains both IPv4 and IPv6 addresses (Ipv4 first).
-   //
-   // error - null
-   // results - [ 
-   //   { address: '1.2.3.4', family: 4 },
-   //   { address: '5.6.7.8', family: 4 } 
-   // ]
-});
-```
-
-```javascript
-lookup('hostname', {all: false}, (error, address, family) => {
-   // address and family of the first resolved IP (IPv4 or IPv6 if supported).
-   // error - null
-   // address - '1.2.3.4'
-   // family - 4
-});
-```
-
-```javascript
-lookup('hostname', {all: false, family: 4}, (error, address, family) => {
-   // address and family of the first resolved IP (IPv4 only). 
-});
-```
-
-```javascript
-lookup('hostname', {all: false, family: 6}, (error, address, family) => {
-   // address and family of the first resolved IP (IPv6 only).
-   // will return an error if IPv6 is not supported. See NodeJS dns.lookup doc.
-});
-```
+- Addresses are requested with `dns.resolve4` / `dns.resolve6` and the `{ttl: true}` option.
+- The answer is cached per hostname and IP version until the smallest TTL among its addresses runs out. Expired
+  entries are removed on the next lookup of that host.
+- While a DNS query is in flight, every other lookup of the same host and IP version waits for that query instead of
+  sending its own.
+- Without `family` the `A` and `AAAA` queries run in parallel. With `{all: true}` the result is one flat array,
+  IPv4 addresses first. Otherwise an IPv4 address is returned, or an IPv6 address if the host has no IPv4 ones.
+- The cache lives in memory of the current process and is shared by everything that imports the package.
 
 [back to top](#table-of-contents)
 
 ---
-## Similar packages
 
-Yahoo tried to solve this problem in own way https://github.com/yahoo/dnscache.
+## Development
 
-The big disadvantages if this package are:
-- monkey patching dns module
-- does not support DNS TTL
-- cache just one IP address and use it for every request (no advantage of round-robin if you have dns resolver that returns several addresses)
+```sh
+npm install
+
+npm run lint            # eslint
+npm run unit-test       # unit tests, no network needed
+npm run func-test       # functional tests, real DNS queries are sent
+npm test                # unit and functional tests
+npm run test:coverage   # all tests with the coverage report
+```
+
+Changes are listed in the [changelog](CHANGELOG.md).
 
 [back to top](#table-of-contents)
+
+---
+
+## Credits
+
+This project is based on [dns-lookup-cache](https://github.com/LCMApps/dns-lookup-cache) by LCMApps.
+
+[back to top](#table-of-contents)
+
+---
+
+## License
+
+[MIT](LICENSE.md)
