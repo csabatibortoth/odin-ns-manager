@@ -32,6 +32,11 @@ module.exports = Object.freeze({
     nsCacheMaxEntries: Number(env.ODIN_NS_CACHE_MAX_ENTRIES) || 10000,
     nsNegativeCacheTtl: Number(env.ODIN_NS_NEGATIVE_CACHE_TTL) || 30,
 
+    // The zones and records of the database are answered by this server itself.
+    // They are kept in memory, and read again every nsZoneRefresh seconds.
+    nsZonesEnabled: bool(env.ODIN_NS_ZONES_ENABLED, true),
+    nsZoneRefresh: Number(env.ODIN_NS_ZONE_REFRESH) || 10,
+
     // Management API (freya-ns-api)
     apiEnabled: bool(env.ODIN_API_ENABLED, true),
     httpServerPort: Number(env.ODIN_HTTP_PORT) || 45451,
@@ -39,6 +44,10 @@ module.exports = Object.freeze({
     httpEnabled: bool(env.ODIN_HTTP_ENABLED, true),
     httpsEnabled: bool(env.ODIN_HTTPS_ENABLED, false),
     authEnabled: bool(env.ODIN_AUTH_ENABLED, true),
+    // The user interface, served by the HTTP(S) server of the API
+    uiEnabled: bool(env.ODIN_UI_ENABLED, true),
+    // Roles that may change zones and records; every signed-in user may read them
+    dnsWriteRoles: list(env.ODIN_DNS_WRITE_ROLES, ['admin']),
 
     modelServerType: 'MNG',
     modelServerAddress: env.ODIN_DB_ADDRESS || '127.0.0.1',

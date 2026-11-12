@@ -2,8 +2,10 @@
 
 const named = require('njord-ns-server');
 const config = require('./config/config');
-const { logService, startApi, stopApi } = require('./services/apiService/apiService');
+const { logService, connectDb, startApi, stopApi } = require('./services/apiService/apiService');
 const searchService = require('./services/serverService/searchService');
+const statusService = require('./services/serverService/statusService');
+const zoneService = require('./services/serverService/zoneService');
 
 const nameServer = named.createServer({ name: config.serverName });
 
@@ -22,9 +24,13 @@ nameServer.on('query', async (query) => {
     if (config.type === 'DEV') console.log('DNS Query: (%s) %s', query.type(), query.name());
 
     try {
-        await searchService.resolve(query);
+        // Our own zones first; every other name is looked up at the upstream
+        const own = await zoneService.resolve(query);
+        if (!own) await searchService.resolve(query);
         nameServer.send(query);
+        statusService.countQuery(own ? 'zones' : 'forwarded');
     } catch (err) {
+        statusService.countQuery('failed');
         logService.addErrorLogErrorEntry(`DNS Query failed: (${query.type()}) ${query.name()} - `, err.stack || err);
     }
 });
@@ -50,10 +56,27 @@ async function main() {
     console.log('Unknown names are looked up at %s', searchService.upstreamServers().join(', '));
     for (let target = 0; target < 3; target++) logService.addLogEntry(target, 0, 'Server Started! - ', config.version);
 
-    if (config.apiEnabled) {
-        // The DNS server keeps running when the management API can not start
+    // The DNS server keeps running, as a forwarder, when the database can not
+    // be reached or the management API can not start
+    let dbConnected = false;
+    if (config.nsZonesEnabled || config.apiEnabled) {
         try {
-            await startApi();
+            await connectDb();
+            dbConnected = true;
+        } catch (err) {
+            console.error('Database is not reachable, no zones are served and the management API is not started:', err.message);
+            logService.addErrorLogErrorEntry('Database connection failed: ', err.stack || err);
+        }
+    }
+
+    if (dbConnected && config.nsZonesEnabled) {
+        console.log('Serving %d zone(s) from the database', await zoneService.start());
+    }
+
+    if (dbConnected && config.apiEnabled) {
+        try {
+            await startApi({ onDnsChange: zoneService.refresh });
+            if (config.uiEnabled) console.log('User interface is at the address above');
         } catch (err) {
             console.error('Management API failed to start:', err.message);
             logService.addErrorLogErrorEntry('Management API failed to start: ', err.stack || err);
@@ -66,6 +89,7 @@ async function main() {
         stopping = true;
         logService.addInfoLogBasicInfoEntry('Server stopping - ', signal);
         nameServer.close();
+        zoneService.stop();
         await stopApi().catch(() => {});
         process.exit(0);
     };

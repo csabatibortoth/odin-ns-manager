@@ -1,6 +1,6 @@
 {
   "name": "freya-ns-api",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "description": "",
   "main": "api.js",
   "scripts": {
@@ -28,6 +28,7 @@
     "mongoose": "^9.12.1",
     "morgan": "^1.12.1",
     "mssql": "^12.7.14",
+    "njord-ns-server": "github:csabatibortoth/njord-ns-server#2.1.0",
     "node-cron": "^4.6.0",
     "nodemailer": "^10.5.0",
     "router": "^2.2.0",

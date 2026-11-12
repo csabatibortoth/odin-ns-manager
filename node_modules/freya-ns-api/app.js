@@ -24,6 +24,7 @@ function createApp() {
     });
     router.use('/auth', require('./routes/authRoutes'));
     router.use('/users', require('./routes/userRoutes'));
+    router.use('/zones', require('./routes/zoneRoutes'));
     app.use('/api', router);
 
     app.use((req, res, next) => next(new HttpError(404, 'Not found')));

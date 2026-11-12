@@ -26,4 +26,6 @@ module.exports = {
     connectToDB,
     disconnectFromDB,
     User: require('./userModel'),
+    Zone: require('./zoneModel'),
+    Record: require('./recordModel'),
 };
