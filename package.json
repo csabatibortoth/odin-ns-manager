@@ -1,11 +1,12 @@
 {
   "name": "odin-ns-manager",
-  "version": "2.2.0",
+  "version": "2.2.2",
   "description": "",
   "main": "server.js",
   "scripts": {
     "test": "node --test \"test/*.test.js\"",
     "start": "node server.js",
+    "build-info": "node services/serverService/buildInfo.js",
     "dev": "nodemon server.js"
   },
   "repository": {

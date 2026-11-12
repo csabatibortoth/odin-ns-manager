@@ -3,8 +3,9 @@
 import { api, session, events, isAdmin, canWriteDns } from './api.js';
 import {
     el, control, button, select, table, pager, badge, activeBadge, notice, showError, debounce,
-    formDialog, confirmDialog, fieldError, formatDate, formatDuration, formatBytes,
+    formDialog, inlineForm, confirmDialog, fieldError, formatDate, formatDuration, formatBytes,
 } from './ui.js';
+import { lineChart, formatNumber } from './charts.js';
 
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'PTR', 'SRV', 'TXT'];
 const LOOKUP_TYPES = [...RECORD_TYPES.slice(0, 6), 'SOA', 'SRV', 'TXT'];
@@ -38,13 +39,76 @@ function filter(label, items, onChange) {
 
 const activeFilter = (onChange) => filter('State', options([['', 'All'], ['true', 'Active'], ['false', 'Inactive']]), onChange);
 
-///--- Status
+///--- Dashboard
 
-export async function status($page) {
-    const $cards = el('div', { class: 'cards' });
+const RANGES = [['15m', 'Last 15 minutes'], ['1h', 'Last hour'], ['6h', 'Last 6 hours'], ['24h', 'Last 24 hours']];
+const REFRESH_SECONDS = 10;
 
-    const load = async () => {
-        const s = await api('GET', '/service/status');
+const sum = (values) => values.reduce((total, value) => total + (value || 0), 0);
+
+function tile(label, value, note) {
+    return el('div', { class: 'tile' }, el('div', { class: 'tile-label', text: label }), el('div', { class: 'tile-value', text: value }), el('div', { class: 'tile-note muted', text: note || '' }));
+}
+
+export function buildText(build) {
+    if (!build?.number && !build?.commit) return null;
+    return [build.number ? `build ${build.number}` : 'build', build.commit ? `(${build.commit})` : null].filter(Boolean).join(' ');
+}
+
+function blockingBadge(blocking) {
+    if (!blocking.enabled) return badge('Off');
+    if (blocking.failing) return badge('Database not readable', 'danger');
+    return blocking.names ? badge('On', 'ok') : badge('No lists', 'warn');
+}
+
+export async function dashboard($page) {
+    const state = { range: '1h' };
+    const $tiles = el('div', { class: 'tiles' });
+    const $cards = el('div', { class: 'cards state' });
+
+    const charts = {
+        queries: lineChart({
+            title: 'Queries',
+            unit: 'per minute',
+            // A series keeps its place, and so its color, when another one is added
+            series: [{ key: 'own', name: 'Own zones and records' }, { key: 'forwarded', name: 'Forwarded' }, { key: 'failed', name: 'Failed' }, { key: 'blocked', name: 'Blocked' }],
+        }),
+        ms: lineChart({ title: 'Answer time', unit: 'milliseconds, average', series: [{ key: 'ms', name: 'Answer time (ms)' }] }),
+        memory: lineChart({ title: 'Memory', unit: 'MB', series: [{ key: 'memory', name: 'Memory (MB)' }] }),
+        cache: lineChart({ title: 'Cached answers', series: [{ key: 'cache', name: 'Cached answers' }], format: (value) => formatNumber(value, 0) }),
+    };
+
+    const showMetrics = (m) => {
+        const perMinute = (counts) => counts.map((count) => (count * 60) / m.step);
+        const own = m.zones.map((count, index) => count + m.records[index]);
+        const frame = { from: m.from, to: m.to, t: m.t };
+        charts.queries.update({
+            ...frame,
+            values: { own: perMinute(own), forwarded: perMinute(m.forwarded), failed: perMinute(m.failed), blocked: perMinute(m.blocked) },
+        });
+        charts.ms.update({ ...frame, values: { ms: m.ms } });
+        charts.memory.update({ ...frame, values: { memory: m.memory.map((bytes) => (bytes === null ? null : bytes / 1024 / 1024)) } });
+        charts.cache.update({ ...frame, values: { cache: m.cache } });
+
+        const totals = { own: sum(own), forwarded: sum(m.forwarded), failed: sum(m.failed), blocked: sum(m.blocked) };
+        const total = totals.own + totals.forwarded + totals.failed + totals.blocked;
+        const share = (part) => (total ? `${formatNumber((part / total) * 100, 1)} % of the queries` : 'no queries yet');
+        // The average of the answers, not of the samples
+        const answered = m.ms.map((ms, index) => (ms === null ? 0 : own[index] + m.forwarded[index] + m.blocked[index]));
+        const time = sum(answered) ? sum(m.ms.map((ms, index) => (ms || 0) * answered[index])) / sum(answered) : null;
+        const period = RANGES.find(([value]) => value === m.range)[1].toLowerCase();
+
+        $tiles.empty().append(
+            tile('Queries', formatNumber(total, 0), period),
+            tile('Own answers', formatNumber(totals.own, 0), share(totals.own)),
+            tile('Forwarded', formatNumber(totals.forwarded, 0), share(totals.forwarded)),
+            tile('Blocked', formatNumber(totals.blocked, 0), share(totals.blocked)),
+            tile('Failed', formatNumber(totals.failed, 0), share(totals.failed)),
+            tile('Average answer time', time === null ? '–' : `${formatNumber(time)} ms`, period)
+        );
+    };
+
+    const showStatus = (s) => {
         const zones = s.zones;
         let zoneState = badge('Up to date', 'ok');
         if (!zones.enabled) zoneState = badge('Disabled');
@@ -55,6 +119,7 @@ export async function status($page) {
             card('Service', [
                 ['Name', s.name],
                 ['Version', s.version],
+                ['Build', buildText(s.build)?.replace(/^build /, '') || '–'],
                 ['Environment', s.type],
                 ['Running for', formatDuration(s.uptime)],
                 ['Started', formatDate(s.startedAt)],
@@ -64,17 +129,20 @@ export async function status($page) {
             card('DNS server', [
                 ['Listens on', el('span', { class: 'mono', text: `${s.dns.address}:${s.dns.port}` })],
                 ['Transport', s.dns.tcp ? 'UDP and TCP' : 'UDP'],
-                ['Queries', s.dns.queries.total],
+                ['Queries since the start', s.dns.queries.total],
                 ['From own zones', s.dns.queries.zones],
+                ['From standalone records', s.dns.queries.records],
+                ['Blocked', s.dns.queries.blocked],
                 ['Forwarded', s.dns.queries.forwarded],
                 ['Failed', s.dns.queries.failed],
             ]),
             card(
-                'Own zones',
+                'Own zones and records',
                 [
                     ['State', zoneState],
                     ['Zones served', zones.zones],
-                    ['Records served', zones.records],
+                    ['Records of the zones', zones.records],
+                    ['Standalone records', zones.standalone],
                     ['Checked every', `${zones.refresh} s`],
                     ['Last check', formatDate(zones.checkedAt)],
                     ['Last change', formatDate(zones.changedAt)],
@@ -82,11 +150,19 @@ export async function status($page) {
                 isAdmin() && zones.enabled
                     ? button('Reload zones', async () => {
                         await api('POST', '/service/zones/reload');
-                        notice('ok', 'The zones are reloaded from the database');
+                        notice('ok', 'The zones and records are reloaded from the database');
                         await load();
                     }, 'small')
                     : null
             ),
+            card('Blocking', [
+                ['State', blockingBadge(s.blocking)],
+                ['Blocklists in use', s.blocking.lists],
+                ['Names blocked', formatNumber(s.blocking.names, 0)],
+                ['Names allowed', s.blocking.allowed],
+                ['Answer', s.blocking.mode === 'nxdomain' ? 'No such name' : el('span', { class: 'mono', text: '0.0.0.0' })],
+                ['Loaded', formatDate(s.blocking.loadedAt)],
+            ]),
             card(
                 'Forwarding',
                 [
@@ -105,8 +181,32 @@ export async function status($page) {
         );
     };
 
-    $page.append(head('Status', button('Refresh', load)), $cards);
+    async function load() {
+        const [s, m] = await Promise.all([api('GET', '/service/status'), api('GET', '/service/metrics', { query: { range: state.range } })]);
+        showMetrics(m);
+        showStatus(s);
+    }
+
+    const $range = select(options(RANGES), state.range);
+    $range.attr('aria-label', 'Period of the graphs').on('change', () => {
+        state.range = $range.val();
+        load().catch(showError);
+    });
+
+    $page.append(
+        head('Dashboard', button('Refresh', load)),
+        el('div', { class: 'toolbar' }, el('label', {}, 'Period', $range)),
+        $tiles,
+        el('div', { class: 'charts' }, Object.values(charts).map((chart) => chart.$el)),
+        $cards
+    );
     await load();
+
+    // Kept up to date for as long as the page is shown
+    const timer = setInterval(() => {
+        if (!$page[0].isConnected) clearInterval(timer);
+        else if (!document.hidden) load().catch(() => {});
+    }, REFRESH_SECONDS * 1000);
 }
 
 ///--- Zones
@@ -364,17 +464,25 @@ const TARGET_PLACEHOLDERS = {
     TXT: 'v=spf1 -all',
 };
 
+// zone: the zone of the record; null for a standalone record
 function recordDialog(zone, record, done) {
     const data = record?.data || {};
     const of = (...types) => (raw) => types.includes(raw.type);
+    const path = zone ? `/zones/${zone.id}/records` : '/records';
 
     formDialog({
-        title: record ? `Edit ${record.type} record` : `Add record to ${zone.name}`,
+        title: record ? `Edit ${record.type} record` : `Add record${zone ? ` to ${zone.name}` : ''}`,
+        intro: zone || record ? null : 'A record of its own, for a name that is in none of the zones. The server answers this name itself, and no longer forwards it.',
         fields: [
-            {
-                name: 'name', label: 'Name', value: record ? relativeName(record.name, zone.name) : '', required: true, placeholder: 'www',
-                hint: `"@" for ${zone.name} itself, a name relative to the zone, or a fully qualified name. "*" may be the first label.`,
-            },
+            zone
+                ? {
+                    name: 'name', label: 'Name', value: record ? relativeName(record.name, zone.name) : '', required: true, placeholder: 'www',
+                    hint: `"@" for ${zone.name} itself, a name relative to the zone, or a fully qualified name. "*" may be the first label.`,
+                }
+                : {
+                    name: 'name', label: 'Name (fully qualified)', value: record?.name, required: true, placeholder: 'nas.home.example',
+                    hint: 'The whole name, e.g. nas.home.example. "*" may be the first label: *.dev.example stands for every name below dev.example.',
+                },
             {
                 name: 'type', label: 'Type', type: 'select', options: options(RECORD_TYPES.map((type) => [type, type])),
                 value: record?.type || 'A', disabled: Boolean(record), hint: record ? 'The type of a record cannot be changed.' : null,
@@ -388,18 +496,20 @@ function recordDialog(zone, record, done) {
             { name: 'data.priority', label: 'Priority', type: 'number', value: data.priority ?? 0, min: 0, max: 65535, show: of('MX', 'SRV') },
             { name: 'data.weight', label: 'Weight', type: 'number', value: data.weight ?? 10, min: 0, max: 65535, show: of('SRV') },
             { name: 'data.port', label: 'Port', type: 'number', value: data.port, required: true, min: 1, max: 65535, show: of('SRV') },
-            {
-                name: 'ttl', label: 'TTL (seconds)', type: 'number', value: record?.ttl ?? '', min: 0, blank: 'null',
-                placeholder: `${zone.ttl}`, hint: 'Leave it empty for the TTL of the zone.',
-            },
+            zone
+                ? {
+                    name: 'ttl', label: 'TTL (seconds)', type: 'number', value: record?.ttl ?? '', min: 0, blank: 'null',
+                    placeholder: `${zone.ttl}`, hint: 'Leave it empty for the TTL of the zone.',
+                }
+                : { name: 'ttl', label: 'TTL (seconds)', type: 'number', value: record?.ttl ?? 3600, min: 0, required: true },
             { name: 'active', label: 'Active: answered by the DNS server', type: 'checkbox', value: record ? record.active : true },
         ],
         onSubmit: async (values) => {
             if (record) {
-                await api('PATCH', `/zones/${zone.id}/records/${record.id}`, { body: values });
+                await api('PATCH', `${path}/${record.id}`, { body: values });
                 notice('ok', 'The record is saved');
             } else {
-                await api('POST', `/zones/${zone.id}/records`, { body: values });
+                await api('POST', path, { body: values });
                 notice('ok', 'The record is added');
             }
             await done();
@@ -410,10 +520,242 @@ function recordDialog(zone, record, done) {
 function deleteRecord(zone, record, done) {
     confirmDialog({
         title: `Delete ${record.type} record?`,
-        message: `${record.name} ${record.type} ${recordValue(record)} is deleted from ${zone.name}. This cannot be undone.`,
+        message: `${record.name} ${record.type} ${recordValue(record)} is deleted${zone ? ` from ${zone.name}` : ''}. This cannot be undone.`,
         onConfirm: async () => {
-            await api('DELETE', `/zones/${zone.id}/records/${record.id}`);
+            await api('DELETE', zone ? `/zones/${zone.id}/records/${record.id}` : `/records/${record.id}`);
             notice('ok', 'The record is deleted');
+            await done();
+        },
+    });
+}
+
+///--- Standalone records
+
+export async function records($page) {
+    const state = { page: 1, q: '', type: '', active: '' };
+    const write = canWriteDns();
+    const $list = el('div');
+
+    const load = async () => {
+        const result = await api('GET', '/records', {
+            query: { page: state.page, limit: PAGE_SIZE, q: state.q, type: state.type, active: state.active, sort: 'name' },
+        });
+        if (result.page > result.pages && result.pages > 0) {
+            state.page = result.pages;
+            return load();
+        }
+        $list.empty().append(
+            table(
+                [
+                    { title: 'Name', cell: (record) => el('span', { class: 'mono', text: record.name }) },
+                    { title: 'Type', cell: (record) => badge(record.type) },
+                    { title: 'Value', class: 'value', cell: (record) => recordValue(record) },
+                    { title: 'TTL', class: 'num', cell: (record) => record.ttl },
+                    { title: 'State', cell: (record) => activeBadge(record.active) },
+                    { title: 'Changed', cell: (record) => formatDate(record.updatedAt) },
+                    ...(write
+                        ? [{
+                            title: '',
+                            class: 'actions',
+                            cell: (record) => [
+                                button('Edit', () => recordDialog(null, record, load), 'small'),
+                                button('Delete', () => deleteRecord(null, record, load), 'small danger'),
+                            ],
+                        }]
+                        : []),
+                ],
+                result.items,
+                state.q || state.type || state.active ? 'No record matches the filter.' : 'There are no standalone records yet.'
+            ),
+            pager(result, (page) => {
+                state.page = page;
+                return load();
+            })
+        );
+    };
+
+    const reload = () => {
+        state.page = 1;
+        load().catch(showError);
+    };
+
+    $page.append(
+        head('Records', write ? button('Add record', () => recordDialog(null, null, load), 'primary') : null),
+        el('p', {
+            class: 'muted',
+            text: 'Standalone records: single names the server answers itself, without a zone around them. The other record types of such a name are not forwarded. The names inside a zone are managed in their zone.',
+        }),
+        el(
+            'div',
+            { class: 'toolbar' },
+            searchBox('Search names and values', (q) => {
+                state.q = q;
+                reload();
+            }),
+            filter('Type', options([['', 'All'], ...RECORD_TYPES.map((type) => [type, type])]), (type) => {
+                state.type = type;
+                reload();
+            }),
+            activeFilter((active) => {
+                state.active = active;
+                reload();
+            })
+        ),
+        $list
+    );
+    await load();
+}
+
+///--- Blocklists
+
+const BLOCKLIST_EXAMPLE = 'https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts';
+
+export async function blocklists($page) {
+    const admin = isAdmin();
+    const $state = el('div', { class: 'summary' });
+    const $lists = el('div');
+    const $allowed = el('div');
+    const fact = (term, value) => el('span', {}, el('span', { text: `${term}: ` }), value);
+
+    const listState = (list) => {
+        if (!list.active) return badge('Inactive', 'warn');
+        if (list.lastError) return el('span', { title: list.lastError }, badge(list.fetchedAt ? 'Download failed' : 'Not downloaded', 'danger'));
+        return list.fetchedAt ? badge('Active', 'ok') : badge('Waiting', 'warn');
+    };
+
+    const load = async () => {
+        const [lists, allowed] = await Promise.all([api('GET', '/blocklists'), api('GET', '/blocklists/allowed')]);
+        const state = lists.state;
+
+        $state.empty().append(
+            fact('Blocking', blockingBadge(state)),
+            fact('Names blocked', formatNumber(state.names, 0)),
+            fact('Answer for a blocked name', state.mode === 'nxdomain' ? 'no such name' : 'the address 0.0.0.0'),
+            admin ? link('#/settings', 'Change in the settings') : null
+        );
+        $lists.empty().append(
+            table(
+                [
+                    {
+                        title: 'List',
+                        cell: (list) => [
+                            el('div', { text: list.name }),
+                            el('div', { class: 'muted small break', text: list.url }),
+                            list.lastError ? el('div', { class: 'field-error small', text: list.lastError }) : null,
+                        ],
+                    },
+                    { title: 'Names', class: 'num', cell: (list) => formatNumber(list.entries, 0) },
+                    { title: 'Subdomains', cell: (list) => (list.subdomains ? 'Blocked too' : '–') },
+                    { title: 'State', cell: listState },
+                    { title: 'Downloaded', cell: (list) => formatDate(list.fetchedAt) },
+                    ...(admin
+                        ? [{
+                            title: '',
+                            class: 'actions',
+                            cell: (list) => [
+                                button('Update', async () => {
+                                    const updated = await api('POST', `/blocklists/${list.id}/update`);
+                                    if (updated.lastError) notice('error', `${updated.name} could not be downloaded: ${updated.lastError}`);
+                                    else notice('ok', `${updated.name} is downloaded: ${formatNumber(updated.entries, 0)} names`);
+                                    await load();
+                                }, 'small'),
+                                button('Edit', () => blocklistDialog(list, load), 'small'),
+                                button('Delete', () => deleteBlocklist(list, load), 'small danger'),
+                            ],
+                        }]
+                        : []),
+                ],
+                lists.items,
+                'There are no blocklists yet.'
+            )
+        );
+        $allowed.empty().append(
+            table(
+                [
+                    { title: 'Name', cell: (entry) => el('span', { class: 'mono', text: entry.name }) },
+                    { title: 'Note', cell: (entry) => entry.note || '–' },
+                    { title: 'Added', cell: (entry) => formatDate(entry.createdAt) },
+                    ...(admin
+                        ? [{
+                            title: '',
+                            class: 'actions',
+                            cell: (entry) => button('Remove', async () => {
+                                await api('DELETE', `/blocklists/allowed/${entry.id}`);
+                                notice('ok', `${entry.name} is no longer allowed`);
+                                await load();
+                            }, 'small danger'),
+                        }]
+                        : []),
+                ],
+                allowed.items,
+                'No name is allowed in spite of the lists.'
+            )
+        );
+    };
+
+    $page.append(
+        head('Blocklists', admin ? button('Add blocklist', () => blocklistDialog(null, load), 'primary') : null),
+        el('p', {
+            class: 'muted',
+            text: 'Lists of names the server does not look up: advertising, trackers, malware. A list is a hosts file or a list of names at an address, and is downloaded again regularly. The own zones and the standalone records come before the lists.',
+        }),
+        $state,
+        $lists,
+        el('div', { class: 'toolbar page-head section-head' }, el('h3', { text: 'Allowed names' }), el('span', { class: 'spacer' }), admin ? button('Allow a name', () => allowedDialog(load)) : null),
+        el('p', { class: 'muted', text: 'These names, and the names below them, are looked up even when a list blocks them.' }),
+        $allowed
+    );
+    await load();
+}
+
+function blocklistDialog(list, done) {
+    formDialog({
+        title: list ? `Edit blocklist ${list.name}` : 'Add blocklist',
+        intro: list ? null : 'The list is downloaded when it is saved, which can take a moment.',
+        fields: [
+            { name: 'name', label: 'Name', value: list?.name, required: true, maxlength: 100, placeholder: 'StevenBlack hosts' },
+            {
+                name: 'url', label: 'Address of the list', type: 'url', value: list?.url, required: true, placeholder: BLOCKLIST_EXAMPLE,
+                hint: 'A hosts file ("0.0.0.0 ads.example.com") or a list of names, over http or https.',
+            },
+            {
+                name: 'subdomains', label: 'Also block the names below the names of the list', type: 'checkbox', value: list ? list.subdomains : false,
+                hint: 'Lists of hosts name every name themselves, and do not need it.',
+            },
+            { name: 'active', label: 'Active: used by the DNS server', type: 'checkbox', value: list ? list.active : true },
+        ],
+        onSubmit: async (values) => {
+            const saved = list ? await api('PATCH', `/blocklists/${list.id}`, { body: values }) : await api('POST', '/blocklists', { body: values });
+            if (saved.lastError) notice('error', `${saved.name} is saved, but could not be downloaded: ${saved.lastError}`);
+            else notice('ok', `${saved.name} is saved: ${formatNumber(saved.entries, 0)} names`);
+            await done();
+        },
+    });
+}
+
+function deleteBlocklist(list, done) {
+    confirmDialog({
+        title: `Delete blocklist ${list.name}?`,
+        message: 'The names of this list are looked up again, unless another list blocks them.',
+        onConfirm: async () => {
+            await api('DELETE', `/blocklists/${list.id}`);
+            notice('ok', `Blocklist ${list.name} is deleted`);
+            await done();
+        },
+    });
+}
+
+function allowedDialog(done) {
+    formDialog({
+        title: 'Allow a name',
+        fields: [
+            { name: 'name', label: 'Name', required: true, placeholder: 'example.com', hint: 'The name and every name below it.' },
+            { name: 'note', label: 'Note', maxlength: 200, placeholder: 'Why it is allowed' },
+        ],
+        submitLabel: 'Allow',
+        onSubmit: async (values) => {
+            const entry = await api('POST', '/blocklists/allowed', { body: values });
+            notice('ok', `${entry.name} is allowed`);
             await done();
         },
     });
@@ -454,7 +796,7 @@ export function lookup($page) {
                 : badge(`${r.answers.length} record(s)`, 'ok');
             $result.empty().append(
                 card(`${r.type} ${r.name}`, [
-                    ['Answered from', r.zone ? `the zone ${r.zone}` : 'the upstream DNS servers'],
+                    ['Answered from', { zone: `the zone ${r.zone}`, records: 'the standalone records', blocklist: 'the blocklists: the name is blocked' }[r.source] || 'the upstream DNS servers'],
                     ['Result', outcome],
                     ['Time', `${r.ms} ms`],
                 ]).append(r.answers.length ? el('ul', { class: 'mono' }, r.answers.map((answer) => el('li', { text: answer }))) : null)
@@ -470,7 +812,7 @@ export function lookup($page) {
         head('Lookup'),
         el('p', {
             class: 'muted',
-            text: 'Asks the DNS server of this manager, the way any of its clients does. The names of the own zones are answered from them; all others by the upstream DNS servers.',
+            text: 'Asks the DNS server of this manager, the way any of its clients does. The names of the own zones and the standalone records are answered from them; all others by the upstream DNS servers.',
         }),
         $form,
         $result
@@ -509,7 +851,7 @@ export async function users($page) {
                         class: 'actions',
                         cell: (user) =>
                             user.id === session.user.id
-                                ? [button('Edit', () => userDialog(user, load), 'small'), link('#/account', 'Password')]
+                                ? [button('Edit', () => userDialog(user, load), 'small'), link('#/account', 'Account')]
                                 : [
                                     button('Edit', () => userDialog(user, load), 'small'),
                                     button('Password', () => passwordDialog(user), 'small'),
@@ -583,7 +925,7 @@ function userDialog(user, done) {
                     session.user = saved;
                     events.userChanged();
                     if (saved.role !== 'admin') {
-                        location.hash = '#/status';
+                        location.hash = '#/dashboard';
                         return;
                     }
                 }
@@ -675,69 +1017,203 @@ export async function logs($page) {
 
 ///--- Account
 
+// The signed-in user changes their own account here
 export async function account($page) {
-    const $details = el('div', { class: 'cards' });
+    const $profile = el('section', { class: 'card' });
+    const $facts = el('div');
 
     const load = async () => {
         const me = await api('GET', `/users/${session.user.id}`);
         session.user = me;
-        $details.empty().append(
-            card(
-                'Your account',
-                [
-                    ['Username', me.username],
-                    ['Display name', me.displayName || '–'],
-                    ['E-mail', me.email],
-                    ['Role', badge(me.role, me.role === 'admin' ? 'ok' : '')],
-                    ['Last sign-in', formatDate(me.lastLoginAt)],
-                    ['Member since', formatDate(me.createdAt)],
+        events.userChanged();
+
+        $facts.empty().append(
+            card('Your account', [
+                ['Role', badge(me.role, me.role === 'admin' ? 'ok' : '')],
+                ['Last sign-in', formatDate(me.lastLoginAt)],
+                ['Member since', formatDate(me.createdAt)],
+                ['Last change', formatDate(me.updatedAt)],
+            ])
+        );
+        $profile.empty().append(
+            el('h3', { text: 'Profile' }),
+            inlineForm({
+                fields: [
+                    // The API lets only admins change a username, also their own
+                    {
+                        name: 'username', label: 'Username', value: me.username, required: true, maxlength: 32, disabled: !isAdmin(),
+                        hint: isAdmin() ? '3 to 32 characters: letters, digits, ".", "_" and "-". You sign in with it.' : 'Your username can be changed by an admin.',
+                    },
+                    { name: 'displayName', label: 'Display name', value: me.displayName, blank: 'empty', maxlength: 100, hint: 'Shown at the top of the page.' },
+                    { name: 'email', label: 'E-mail', type: 'email', value: me.email, required: true, hint: 'You can sign in with it as well.' },
                 ],
-                button('Edit profile', () => profileDialog(me, load), 'small'),
-                button('Change password', ownPasswordDialog, 'small')
-            )
+                submitLabel: 'Save profile',
+                onSubmit: async (values) => {
+                    await api('PATCH', `/users/${me.id}`, { body: values });
+                    notice('ok', 'Your profile is saved');
+                    await load();
+                },
+            })
         );
     };
 
-    $page.append(head('Account'), $details);
+    const $password = el(
+        'section',
+        { class: 'card' },
+        el('h3', { text: 'Password' }),
+        inlineForm({
+            intro: 'You are signed out everywhere, also here, and sign in again with the new password.',
+            fields: [
+                { name: 'currentPassword', label: 'Current password', type: 'password', required: true, autocomplete: 'current-password' },
+                { name: 'newPassword', label: 'New password', type: 'password', required: true, hint: PASSWORD_HINT, autocomplete: 'new-password' },
+                { name: 'confirm', label: 'New password again', type: 'password', required: true, send: false, autocomplete: 'new-password' },
+            ],
+            submitLabel: 'Change password',
+            clear: true,
+            onSubmit: async (values, raw) => {
+                if (raw.newPassword !== raw.confirm) throw fieldError('confirm', 'The two passwords differ');
+                try {
+                    await api('PUT', `/users/${session.user.id}/password`, { body: values });
+                } catch (err) {
+                    // The API names the field in its message, not in the details
+                    if (err.status === 400 && /currentPassword/.test(err.message)) throw fieldError('currentPassword', 'The current password is wrong');
+                    throw err;
+                }
+                setTimeout(() => events.signedOut('Your password is changed. Sign in with the new one.'));
+            },
+        })
+    );
+
+    $page.append(head('Account'), el('div', { class: 'cards wide' }, $profile, $password), $facts);
     await load();
 }
 
-function profileDialog(me, done) {
-    formDialog({
-        title: 'Edit profile',
-        fields: [
-            { name: 'displayName', label: 'Display name', value: me.displayName, blank: 'empty', maxlength: 100 },
-            { name: 'email', label: 'E-mail', type: 'email', value: me.email, required: true },
-        ],
-        onSubmit: async (values) => {
-            session.user = await api('PATCH', `/users/${me.id}`, { body: values });
-            events.userChanged();
-            notice('ok', 'Your profile is saved');
-            await done();
-        },
-    });
+///--- Settings
+
+const SOURCES = { environment: 'Environment', saved: 'Saved here', default: 'Default' };
+
+function settingText(setting, value) {
+    if (value === undefined) return el('span', { class: 'muted', text: 'not shown' });
+    if (setting.type === 'bool') return value ? 'Yes' : 'No';
+    if (setting.options) return setting.options.find((option) => option.value === value)?.text ?? String(value);
+    if (setting.type === 'list') return value.length ? value.join(', ') : el('span', { class: 'muted', text: 'none' });
+    return value === '' ? el('span', { class: 'muted', text: 'empty' }) : String(value);
 }
 
-function ownPasswordDialog() {
+const settingDefault = (setting) => setting.options?.find((option) => option.value === setting.fallback)?.text ?? setting.fallback;
+
+// The server configuration, for the admins
+export async function settings($page) {
+    const $notice = el('div');
+    const $groups = el('div');
+
+    const show = (result) => {
+        $notice.empty();
+        if (result.restartNeeded) {
+            $notice.append(
+                el('p', { class: 'banner warn', role: 'status', text: 'Some of the saved settings wait for a restart: the server still runs with the values it was started with. Restart the service to apply them.' })
+            );
+        }
+
+        $groups.empty().append(
+            result.groups.map((group) => {
+                const editable = group.settings.filter((setting) => setting.editable);
+                return el(
+                    'section',
+                    { class: 'settings-group' },
+                    el(
+                        'div',
+                        { class: 'toolbar page-head' },
+                        el('h3', { text: group.title }),
+                        el('span', { class: 'spacer' }),
+                        editable.length ? button('Edit', () => settingsDialog(group, show), 'small') : null
+                    ),
+                    table(
+                        [
+                            { title: 'Setting', cell: (setting) => setting.label },
+                            {
+                                title: 'Value',
+                                class: 'value',
+                                cell: (setting) => [
+                                    settingText(setting, setting.value),
+                                    'pending' in setting
+                                        ? el('div', {}, badge('After restart', 'warn'), ' ', settingText(setting, setting.pending))
+                                        : null,
+                                ],
+                            },
+                            {
+                                title: 'From',
+                                cell: (setting) => badge(SOURCES[setting.source], setting.source === 'default' ? '' : 'ok'),
+                            },
+                            {
+                                title: 'Changes',
+                                cell: (setting) => {
+                                    if (setting.source === 'environment') return el('span', { class: 'muted', text: `fixed by ${setting.env}` });
+                                    if (!setting.editable) return el('span', { class: 'muted', text: `only with ${setting.env}` });
+                                    return setting.live ? 'at once' : 'after a restart';
+                                },
+                            },
+                        ],
+                        group.settings
+                    )
+                );
+            })
+        );
+    };
+
+    $page.append(
+        head('Settings', button('Refresh', async () => show(await api('GET', '/service/config')))),
+        el('p', {
+            class: 'muted',
+            text: 'The configuration of the server. What is saved here is kept in its settings file, and comes after the environment variables: a setting that is fixed by its variable can not be changed here.',
+        }),
+        $notice,
+        $groups
+    );
+    show(await api('GET', '/service/config'));
+}
+
+function settingsDialog(group, done) {
+    const editable = group.settings.filter((setting) => setting.editable);
+    // What is saved wins over what the server still runs with
+    const current = (setting) => ('pending' in setting ? setting.pending : setting.value);
+    const shown = (setting) => (setting.type === 'list' ? current(setting).join(', ') : current(setting));
+
     formDialog({
-        title: 'Change password',
-        intro: 'You are signed out everywhere, also here, and sign in again with the new password.',
-        fields: [
-            { name: 'currentPassword', label: 'Current password', type: 'password', required: true, autocomplete: 'current-password' },
-            { name: 'newPassword', label: 'New password', type: 'password', required: true, hint: PASSWORD_HINT, autocomplete: 'new-password' },
-            { name: 'confirm', label: 'New password again', type: 'password', required: true, send: false, autocomplete: 'new-password' },
-        ],
-        submitLabel: 'Change password',
-        onSubmit: async (values, raw) => {
-            if (raw.newPassword !== raw.confirm) throw fieldError('confirm', 'The two passwords differ');
-            try {
-                await api('PUT', `/users/${session.user.id}/password`, { body: values });
-            } catch (err) {
-                // The API names the field in its message, not in the details
-                if (err.status === 400 && /currentPassword/.test(err.message)) throw fieldError('currentPassword', 'The current password is wrong');
-                throw err;
+        title: `${group.title} settings`,
+        fields: editable.map((setting) => ({
+            name: setting.key,
+            label: setting.label,
+            type: setting.options ? 'select' : { bool: 'checkbox', int: 'number' }[setting.type] || 'text',
+            options: setting.options,
+            value: shown(setting),
+            min: setting.min,
+            max: setting.type === 'int' ? setting.max : undefined,
+            maxlength: setting.type === 'string' ? setting.max : undefined,
+            required: setting.type !== 'bool' && setting.type !== 'list',
+            blank: 'empty',
+            hint: [
+                setting.hint,
+                setting.type === 'bool' ? null : `Default: ${setting.type === 'list' ? setting.fallback.join(', ') || 'none' : settingDefault(setting)}.`,
+                setting.live ? null : 'Takes effect after a restart.',
+            ].filter(Boolean).join(' '),
+        })),
+        onSubmit: async (values) => {
+            // Only what was changed is sent, so the rest stays at its default
+            const changes = {};
+            for (const setting of editable) {
+                const value = setting.type === 'list' ? String(values[setting.key] ?? '').split(',').map((item) => item.trim()).filter(Boolean) : values[setting.key];
+                if (JSON.stringify(value) !== JSON.stringify(current(setting))) changes[setting.key] = value;
             }
-            setTimeout(() => events.signedOut('Your password is changed. Sign in with the new one.'));
+            if (!Object.keys(changes).length) return;
+
+            const result = await api('PATCH', '/service/config', { body: changes });
+            const waits = result.changed.some((key) => editable.find((setting) => setting.key === key && !setting.live));
+            notice('ok', waits ? 'The settings are saved. Restart the service to apply them.' : 'The settings are saved and applied');
+            // The name of the server and the roles are also what the page itself shows
+            session.info = await api('GET', '/service/info', { quiet: true }).catch(() => session.info);
+            events.userChanged();
+            done(result);
         },
     });
 }

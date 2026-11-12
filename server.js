@@ -3,6 +3,7 @@
 const named = require('njord-ns-server');
 const config = require('./config/config');
 const { logService, connectDb, startApi, stopApi } = require('./services/apiService/apiService');
+const blockService = require('./services/serverService/blockService');
 const searchService = require('./services/serverService/searchService');
 const statusService = require('./services/serverService/statusService');
 const zoneService = require('./services/serverService/zoneService');
@@ -23,12 +24,15 @@ function listen(method, transport) {
 nameServer.on('query', async (query) => {
     if (config.type === 'DEV') console.log('DNS Query: (%s) %s', query.type(), query.name());
 
+    const started = performance.now();
     try {
-        // Our own zones first; every other name is looked up at the upstream
-        const own = await zoneService.resolve(query);
-        if (!own) await searchService.resolve(query);
+        // Our own zones and standalone records first, then the blocklists;
+        // every other name is looked up at the upstream
+        let answered = await zoneService.resolve(query);
+        if (!answered && blockService.resolve(query)) answered = 'blocked';
+        if (!answered) await searchService.resolve(query);
         nameServer.send(query);
-        statusService.countQuery(own ? 'zones' : 'forwarded');
+        statusService.countQuery(answered || 'forwarded', performance.now() - started);
     } catch (err) {
         statusService.countQuery('failed');
         logService.addErrorLogErrorEntry(`DNS Query failed: (${query.type()}) ${query.name()} - `, err.stack || err);
@@ -56,10 +60,13 @@ async function main() {
     console.log('Unknown names are looked up at %s', searchService.upstreamServers().join(', '));
     for (let target = 0; target < 3; target++) logService.addLogEntry(target, 0, 'Server Started! - ', config.version);
 
+    // The history of the dashboard
+    statusService.start(() => ({ memory: process.memoryUsage().rss, cache: searchService.cacheSize() }));
+
     // The DNS server keeps running, as a forwarder, when the database can not
     // be reached or the management API can not start
     let dbConnected = false;
-    if (config.nsZonesEnabled || config.apiEnabled) {
+    if (config.nsZonesEnabled || config.nsBlockingEnabled || config.apiEnabled) {
         try {
             await connectDb();
             dbConnected = true;
@@ -71,6 +78,10 @@ async function main() {
 
     if (dbConnected && config.nsZonesEnabled) {
         console.log('Serving %d zone(s) from the database', await zoneService.start());
+    }
+
+    if (dbConnected) {
+        console.log('Blocking %d name(s) of the blocklists', await blockService.start());
     }
 
     if (dbConnected && config.apiEnabled) {
@@ -90,6 +101,8 @@ async function main() {
         logService.addInfoLogBasicInfoEntry('Server stopping - ', signal);
         nameServer.close();
         zoneService.stop();
+        blockService.stop();
+        statusService.stop();
         await stopApi().catch(() => {});
         process.exit(0);
     };

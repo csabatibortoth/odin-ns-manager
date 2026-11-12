@@ -35,12 +35,17 @@ let httpServer = null;
 let modelService = null;
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+// A request below these that is not a read may have changed what the DNS server answers
+const DNS_PATHS = ['/api/zones', '/api/records'];
 
 // Connects to the database of the API, which also holds the zones and records
 // the DNS server answers from. Mongoose is only loaded when it is needed.
 async function connectDb() {
     if (modelService) return;
     const manager = require('freya-ns-api/model/mongoDB/manager');
+    // Our own model has to be known before the connection is made, for its indexes
+    require('../../model/mongoDB/standaloneRecordModel');
+    require('../../model/mongoDB/blocklistModel');
     await manager.connectToDB();
     modelService = manager;
 }
@@ -66,11 +71,13 @@ async function startApi({ onDnsChange } = {}) {
     const app = express();
     app.disable('x-powered-by');
     app.use('/api/service', require('./serviceRoutes').createRouter());
+    app.use('/api/records', require('./recordRoutes').createRouter());
+    app.use('/api/blocklists', require('./blocklistRoutes').createRouter());
     if (config.uiEnabled) app.use(require('../uiService/uiService').createUi());
     app.use(createApp());
 
     httpServer = await serverService.startServer((req, res) => {
-        if (onDnsChange && !READ_METHODS.has(req.method) && req.url.startsWith('/api/zones')) {
+        if (onDnsChange && !READ_METHODS.has(req.method) && DNS_PATHS.some((path) => req.url.startsWith(path))) {
             res.once('finish', onDnsChange);
         }
         app(req, res);

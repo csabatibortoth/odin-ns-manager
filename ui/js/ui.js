@@ -188,8 +188,10 @@ function setPath(target, path, value) {
     node[last] = value;
 }
 
-function buildField(field, index) {
-    const id = `field_${index}`;
+let fieldCount = 0;
+
+function buildField(field) {
+    const id = `field_${++fieldCount}`; // a page may hold more than one form
     let $input;
 
     if (field.type === 'select') {
@@ -254,22 +256,24 @@ function collectValues(rows) {
     return values;
 }
 
-// A form in the modal.
+// A form.
 // fields: [{ name, label, type, value, options, required, hint, placeholder,
 //            disabled, blank, show: (raw) => boolean }] - label may be a function of the raw values.
 // onSubmit(values, raw) saves; when it fails with details: { field: message },
-// the messages are shown at their fields. The dialog closes when it succeeds.
-export function formDialog({ title, intro, fields, submitLabel = 'Save', onSubmit }) {
+// the messages are shown at their fields.
+// inDialog: the form is the content of the modal, which closes when it succeeds.
+// Otherwise it stays on its page; with `clear` it is emptied when it succeeds.
+function buildForm({ intro, fields, submitLabel = 'Save', onSubmit, inDialog = false, clear = false }) {
     const rows = fields.map(buildField);
     const $error = el('p', { class: 'form-error', role: 'alert' }).hide();
     const $submit = control({ inputType: 'submit', value: submitLabel, class: 'button primary' });
     const $form = el(
         'form',
-        { class: 'form' },
+        { class: inDialog ? 'form' : 'form inline' },
         intro ? el('p', { class: 'hint', text: intro }) : null,
         $error,
         rows.map((row) => row.$row),
-        el('div', { class: 'actions' }, $submit, button('Cancel', closeDialog))
+        el('div', { class: 'actions' }, $submit, inDialog ? button('Cancel', closeDialog) : null)
     );
 
     const arrange = () => {
@@ -303,18 +307,31 @@ export function formDialog({ title, intro, fields, submitLabel = 'Save', onSubmi
         $submit.prop('disabled', true);
         try {
             await onSubmit(collectValues(rows), rawValues(rows));
-            closeDialog();
+            if (inDialog) closeDialog();
+            else if (clear) {
+                $form[0].reset();
+                arrange();
+            }
         } catch (err) {
-            if (err?.status === 401) closeDialog();
-            else showFailure(err);
+            // An expired session is reported by its own handler
+            if (err?.status !== 401) showFailure(err);
+            else if (inDialog) closeDialog();
         } finally {
             $submit.prop('disabled', false);
         }
     });
 
     arrange();
-    showDialog(title, $form);
+    return $form;
 }
+
+// A form in the modal; see buildForm
+export function formDialog({ title, ...form }) {
+    showDialog(title, buildForm({ ...form, inDialog: true }));
+}
+
+// A form on the page; see buildForm
+export const inlineForm = (form) => buildForm(form);
 
 // Asks before something that can not be undone
 export function confirmDialog({ title, message, confirmLabel = 'Delete', onConfirm }) {
