@@ -1,9 +1,11 @@
 # odin-ns-manager
 
 The manager service of the Odin name server stack. It runs the DNS server, the
-management API and the DNS client side in one process. The zones and records
-that are managed through the API are stored in MongoDB, and answered by the DNS
-server.
+management API, its user interface and the DNS client side in one process. The
+zones and records that are managed in the browser or through the API are stored
+in MongoDB, and answered by the DNS server.
+
+Current version: **2.2.0** - see the [release notes](#release-notes).
 
 ![The zones of the manager](docs/screenshots/zones.png)
 
@@ -294,6 +296,66 @@ in memory; they need no database.
 | `ui/` | The user interface: page, theme and scripts |
 | `docs/screenshots/` | Screenshots of the user interface |
 | `test/` | Tests |
+
+## Release notes
+
+### 2.2.0
+
+#### Added
+
+- **Own zones.** The DNS server answers the names of the active zones and
+  records in MongoDB itself, as authoritative answers: every record type of the
+  API, the SOA record, CNAME chains, wildcard records, and "no such name" for
+  the names that do not exist in a zone. Every other name is forwarded, as
+  before. See [Own zones](#own-zones).
+- **Zones kept in memory.** A query never waits for the database. A change made
+  through the API is served when the request is done; other changes are picked
+  up by the serial of the zone within `ODIN_NS_ZONE_REFRESH` seconds. When the
+  database can not be read, the zones in memory are served on.
+- **Management of zones and records** through the API (`/api/zones`), from
+  freya-ns-api 2.2.0.
+- **User interface** in the browser, built on athena-ui-js and jQuery: status,
+  zones and records, lookup, users, logs and account. See
+  [User interface](#user-interface).
+- **Service endpoints** under `/api/service`: info, status, lookup, zone reload,
+  cache clear and logs.
+- **Settings:** `ODIN_NS_ZONES_ENABLED`, `ODIN_NS_ZONE_REFRESH`,
+  `ODIN_DNS_WRITE_ROLES` and `ODIN_UI_ENABLED`.
+- **Tests:** `npm test` checks the answers of the own zones over a real DNS
+  server on a local port.
+
+#### Changed
+
+- freya-ns-api 2.0.0 → 2.2.0. New dependencies: athena-ui-js 0.4.1 and jQuery
+  4.0.0. njord-ns-server is pinned to the npm registry with an `overrides`
+  entry, as freya-ns-api asks for it from GitHub.
+- The database is connected once at the start, for the zones and the API
+  together. When it can not be reached, the DNS server runs as a forwarder only.
+  The database is also used when `ODIN_API_ENABLED` is `false`, unless
+  `ODIN_NS_ZONES_ENABLED` is `false` too.
+
+#### Upgrading from 2.0.0
+
+- No data has to be migrated: the `zones` and `records` collections and their
+  indexes are created on the first start.
+- The user interface is served on the port of the API by default. Set
+  `ODIN_UI_ENABLED=false` to keep the API only.
+- Names of an active zone are no longer forwarded. A zone that is created for a
+  name that also exists elsewhere takes it over on this server; mark the zone
+  inactive to forward its names again.
+
+#### Not yet included
+
+- Zone transfers (AXFR) are refused, and responses have no authority section.
+
+### 2.0.0
+
+- All packages updated; Node.js 22 or newer.
+- freya-ns-api 2.0.0 as the management API: users, authentication, logging and
+  the MongoDB connection.
+- Unknown names forwarded to upstream DNS servers, with an in-memory cache of
+  the answers, a negative cache, and one lookup per name and type.
+- Every setting can be overridden with an `ODIN_*` environment variable.
 
 ## License
 
