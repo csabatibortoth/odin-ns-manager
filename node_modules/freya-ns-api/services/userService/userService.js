@@ -5,16 +5,15 @@ const config = require('../../config/config');
 const User = require('../../model/mongoDB/userModel');
 const HttpError = require('../httpError');
 const authService = require('../authService/authService');
+const { escapeRegex, parseBoolean, parsePaging, parseSort, findPage } = require('../listQuery');
 const logService = require('../logService/logService');
 
-const MAX_PAGE_SIZE = 100;
 const SORTABLE = new Set(['username', 'email', 'displayName', 'role', 'active', 'createdAt', 'updatedAt', 'lastLoginAt']);
 const SELF_EDITABLE = ['email', 'displayName'];
 const ADMIN_EDITABLE = [...SELF_EDITABLE, 'username', 'role', 'active'];
 
 const isAdmin = (actor) => actor?.role === 'admin';
 const notFound = () => new HttpError(404, 'User not found');
-const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function assertId(id) {
     if (!mongoose.isValidObjectId(id)) throw notFound();
@@ -26,12 +25,6 @@ function assertPassword(password, field = 'password') {
     }
 }
 
-function parseBoolean(value, field) {
-    if (value === 'true' || value === true) return true;
-    if (value === 'false' || value === false) return false;
-    throw new HttpError(400, `${field} must be true or false`);
-}
-
 // Refuses a change that would leave the system without an active admin.
 async function assertNotLastAdmin(user) {
     if (user.role !== 'admin' || !user.active) return;
@@ -41,9 +34,6 @@ async function assertNotLastAdmin(user) {
 
 // query: { page, limit, q, role, active, sort } - sort is a field name, prefixed with "-" for descending.
 async function listUsers(query = {}) {
-    const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
-    const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number.parseInt(query.limit, 10) || 20));
-
     const filter = {};
     if (query.role !== undefined) {
         if (!User.ROLES.includes(query.role)) throw new HttpError(400, `role must be one of: ${User.ROLES.join(', ')}`);
@@ -55,21 +45,7 @@ async function listUsers(query = {}) {
         filter.$or = [{ username: pattern }, { email: pattern }, { displayName: pattern }];
     }
 
-    const sortParam = typeof query.sort === 'string' ? query.sort : 'username';
-    const descending = sortParam.startsWith('-');
-    const sortField = descending ? sortParam.slice(1) : sortParam;
-    if (!SORTABLE.has(sortField)) throw new HttpError(400, `sort must be one of: ${[...SORTABLE].join(', ')}`);
-
-    const [items, total] = await Promise.all([
-        User.find(filter)
-            .sort({ [sortField]: descending ? -1 : 1, _id: 1 })
-            .skip((page - 1) * limit)
-            .limit(limit)
-            .lean(),
-        User.countDocuments(filter),
-    ]);
-
-    return { items: items.map(User.toPublic), page, limit, total, pages: Math.ceil(total / limit) };
+    return findPage(User, filter, parsePaging(query), parseSort(query, SORTABLE, 'username'), User.toPublic);
 }
 
 async function getUser(id) {

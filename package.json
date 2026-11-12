@@ -4,7 +4,7 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test \"test/*.test.js\"",
     "start": "node server.js",
     "dev": "nodemon server.js"
   },
@@ -19,15 +19,17 @@
   },
   "homepage": "https://github.com/csabatibortoth/odin-ns-manager",
   "dependencies": {
+    "athena-ui-js": "^0.4.1",
     "bestzip": "^4.0.3",
     "body-parser": "^2.4.0",
     "bragi-ns-client": "^2.0.0",
     "ejs": "^7.0.2",
     "express": "^5.3.0",
-    "freya-ns-api": "^2.0.0",
+    "freya-ns-api": "^2.2.0",
     "helmet": "^8.3.0",
     "ipaddr": "^0.1.0",
     "ipaddr.js": "^2.5.0",
+    "jquery": "^4.0.0",
     "jsonwebtoken": "^9.0.3",
     "killable": "^1.0.1",
     "mongoose": "^9.12.1",
@@ -40,6 +42,9 @@
     "router": "^2.2.0",
     "save": "^2.9.0",
     "winston": "^3.19.0"
+  },
+  "overrides": {
+    "njord-ns-server": "$njord-ns-server"
   },
   "engines": {
     "node": ">=22"
