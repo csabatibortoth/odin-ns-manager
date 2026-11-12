@@ -24,6 +24,7 @@
     --series-1: #2a78d6;
     --series-2: #eb6834;
     --series-3: #1baf7a;
+    --series-4: #eda100;
     --chart-grid: #e6eaee;
     --chart-axis: #c2cad3;
 }
@@ -48,6 +49,7 @@
         --series-1: #3987e5;
         --series-2: #d95926;
         --series-3: #199e70;
+        --series-4: #c98500;
         --chart-grid: #2a333e;
         --chart-axis: #3d4957;
     }
@@ -503,6 +505,11 @@ a#session_user:focus-visible {
     text-align: right;
 }
 
+/* Five cards: three and two, not four and one */
+.cards.state {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
 .cards.wide {
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     align-items: start;
@@ -599,9 +606,11 @@ a#session_user:focus-visible {
 .chart .line.s1 { stroke: var(--series-1); }
 .chart .line.s2 { stroke: var(--series-2); }
 .chart .line.s3 { stroke: var(--series-3); }
+.chart .line.s4 { stroke: var(--series-4); }
 .chart .dot.s1 { fill: var(--series-1); }
 .chart .dot.s2 { fill: var(--series-2); }
 .chart .dot.s3 { fill: var(--series-3); }
+.chart .dot.s4 { fill: var(--series-4); }
 
 .chart-key {
     display: inline-block;
@@ -615,6 +624,7 @@ a#session_user:focus-visible {
 .chart-key.s1 { background: var(--series-1); }
 .chart-key.s2 { background: var(--series-2); }
 .chart-key.s3 { background: var(--series-3); }
+.chart-key.s4 { background: var(--series-4); }
 
 .chart-legend {
     display: flex;
@@ -666,6 +676,32 @@ a#session_user:focus-visible {
 .chart-data .grid th,
 .chart-data .grid td {
     padding: 4px 10px;
+}
+
+/* Blocklists */
+
+.small {
+    font-size: 0.85rem;
+}
+
+.break {
+    overflow-wrap: anywhere;
+}
+
+.grid .field-error {
+    color: var(--danger);
+}
+
+.summary a {
+    margin-left: auto;
+}
+
+.section-head {
+    margin: 26px 0 6px;
+}
+
+.section-head h3 {
+    margin: 0;
 }
 
 /* Settings */

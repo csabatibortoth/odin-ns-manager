@@ -55,16 +55,23 @@ export function buildText(build) {
     return [build.number ? `build ${build.number}` : 'build', build.commit ? `(${build.commit})` : null].filter(Boolean).join(' ');
 }
 
+function blockingBadge(blocking) {
+    if (!blocking.enabled) return badge('Off');
+    if (blocking.failing) return badge('Database not readable', 'danger');
+    return blocking.names ? badge('On', 'ok') : badge('No lists', 'warn');
+}
+
 export async function dashboard($page) {
     const state = { range: '1h' };
     const $tiles = el('div', { class: 'tiles' });
-    const $cards = el('div', { class: 'cards' });
+    const $cards = el('div', { class: 'cards state' });
 
     const charts = {
         queries: lineChart({
             title: 'Queries',
             unit: 'per minute',
-            series: [{ key: 'own', name: 'Own zones and records' }, { key: 'forwarded', name: 'Forwarded' }, { key: 'failed', name: 'Failed' }],
+            // A series keeps its place, and so its color, when another one is added
+            series: [{ key: 'own', name: 'Own zones and records' }, { key: 'forwarded', name: 'Forwarded' }, { key: 'failed', name: 'Failed' }, { key: 'blocked', name: 'Blocked' }],
         }),
         ms: lineChart({ title: 'Answer time', unit: 'milliseconds, average', series: [{ key: 'ms', name: 'Answer time (ms)' }] }),
         memory: lineChart({ title: 'Memory', unit: 'MB', series: [{ key: 'memory', name: 'Memory (MB)' }] }),
@@ -75,23 +82,27 @@ export async function dashboard($page) {
         const perMinute = (counts) => counts.map((count) => (count * 60) / m.step);
         const own = m.zones.map((count, index) => count + m.records[index]);
         const frame = { from: m.from, to: m.to, t: m.t };
-        charts.queries.update({ ...frame, values: { own: perMinute(own), forwarded: perMinute(m.forwarded), failed: perMinute(m.failed) } });
+        charts.queries.update({
+            ...frame,
+            values: { own: perMinute(own), forwarded: perMinute(m.forwarded), failed: perMinute(m.failed), blocked: perMinute(m.blocked) },
+        });
         charts.ms.update({ ...frame, values: { ms: m.ms } });
         charts.memory.update({ ...frame, values: { memory: m.memory.map((bytes) => (bytes === null ? null : bytes / 1024 / 1024)) } });
         charts.cache.update({ ...frame, values: { cache: m.cache } });
 
-        const totals = { own: sum(own), forwarded: sum(m.forwarded), failed: sum(m.failed) };
-        const total = totals.own + totals.forwarded + totals.failed;
+        const totals = { own: sum(own), forwarded: sum(m.forwarded), failed: sum(m.failed), blocked: sum(m.blocked) };
+        const total = totals.own + totals.forwarded + totals.failed + totals.blocked;
         const share = (part) => (total ? `${formatNumber((part / total) * 100, 1)} % of the queries` : 'no queries yet');
         // The average of the answers, not of the samples
-        const answered = m.ms.map((ms, index) => (ms === null ? 0 : own[index] + m.forwarded[index]));
+        const answered = m.ms.map((ms, index) => (ms === null ? 0 : own[index] + m.forwarded[index] + m.blocked[index]));
         const time = sum(answered) ? sum(m.ms.map((ms, index) => (ms || 0) * answered[index])) / sum(answered) : null;
         const period = RANGES.find(([value]) => value === m.range)[1].toLowerCase();
 
         $tiles.empty().append(
             tile('Queries', formatNumber(total, 0), period),
-            tile('Own zones and records', formatNumber(totals.own, 0), share(totals.own)),
+            tile('Own answers', formatNumber(totals.own, 0), share(totals.own)),
             tile('Forwarded', formatNumber(totals.forwarded, 0), share(totals.forwarded)),
+            tile('Blocked', formatNumber(totals.blocked, 0), share(totals.blocked)),
             tile('Failed', formatNumber(totals.failed, 0), share(totals.failed)),
             tile('Average answer time', time === null ? '–' : `${formatNumber(time)} ms`, period)
         );
@@ -121,6 +132,7 @@ export async function dashboard($page) {
                 ['Queries since the start', s.dns.queries.total],
                 ['From own zones', s.dns.queries.zones],
                 ['From standalone records', s.dns.queries.records],
+                ['Blocked', s.dns.queries.blocked],
                 ['Forwarded', s.dns.queries.forwarded],
                 ['Failed', s.dns.queries.failed],
             ]),
@@ -143,6 +155,14 @@ export async function dashboard($page) {
                     }, 'small')
                     : null
             ),
+            card('Blocking', [
+                ['State', blockingBadge(s.blocking)],
+                ['Blocklists in use', s.blocking.lists],
+                ['Names blocked', formatNumber(s.blocking.names, 0)],
+                ['Names allowed', s.blocking.allowed],
+                ['Answer', s.blocking.mode === 'nxdomain' ? 'No such name' : el('span', { class: 'mono', text: '0.0.0.0' })],
+                ['Loaded', formatDate(s.blocking.loadedAt)],
+            ]),
             card(
                 'Forwarding',
                 [
@@ -586,6 +606,161 @@ export async function records($page) {
     await load();
 }
 
+///--- Blocklists
+
+const BLOCKLIST_EXAMPLE = 'https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts';
+
+export async function blocklists($page) {
+    const admin = isAdmin();
+    const $state = el('div', { class: 'summary' });
+    const $lists = el('div');
+    const $allowed = el('div');
+    const fact = (term, value) => el('span', {}, el('span', { text: `${term}: ` }), value);
+
+    const listState = (list) => {
+        if (!list.active) return badge('Inactive', 'warn');
+        if (list.lastError) return el('span', { title: list.lastError }, badge(list.fetchedAt ? 'Download failed' : 'Not downloaded', 'danger'));
+        return list.fetchedAt ? badge('Active', 'ok') : badge('Waiting', 'warn');
+    };
+
+    const load = async () => {
+        const [lists, allowed] = await Promise.all([api('GET', '/blocklists'), api('GET', '/blocklists/allowed')]);
+        const state = lists.state;
+
+        $state.empty().append(
+            fact('Blocking', blockingBadge(state)),
+            fact('Names blocked', formatNumber(state.names, 0)),
+            fact('Answer for a blocked name', state.mode === 'nxdomain' ? 'no such name' : 'the address 0.0.0.0'),
+            admin ? link('#/settings', 'Change in the settings') : null
+        );
+        $lists.empty().append(
+            table(
+                [
+                    {
+                        title: 'List',
+                        cell: (list) => [
+                            el('div', { text: list.name }),
+                            el('div', { class: 'muted small break', text: list.url }),
+                            list.lastError ? el('div', { class: 'field-error small', text: list.lastError }) : null,
+                        ],
+                    },
+                    { title: 'Names', class: 'num', cell: (list) => formatNumber(list.entries, 0) },
+                    { title: 'Subdomains', cell: (list) => (list.subdomains ? 'Blocked too' : '–') },
+                    { title: 'State', cell: listState },
+                    { title: 'Downloaded', cell: (list) => formatDate(list.fetchedAt) },
+                    ...(admin
+                        ? [{
+                            title: '',
+                            class: 'actions',
+                            cell: (list) => [
+                                button('Update', async () => {
+                                    const updated = await api('POST', `/blocklists/${list.id}/update`);
+                                    if (updated.lastError) notice('error', `${updated.name} could not be downloaded: ${updated.lastError}`);
+                                    else notice('ok', `${updated.name} is downloaded: ${formatNumber(updated.entries, 0)} names`);
+                                    await load();
+                                }, 'small'),
+                                button('Edit', () => blocklistDialog(list, load), 'small'),
+                                button('Delete', () => deleteBlocklist(list, load), 'small danger'),
+                            ],
+                        }]
+                        : []),
+                ],
+                lists.items,
+                'There are no blocklists yet.'
+            )
+        );
+        $allowed.empty().append(
+            table(
+                [
+                    { title: 'Name', cell: (entry) => el('span', { class: 'mono', text: entry.name }) },
+                    { title: 'Note', cell: (entry) => entry.note || '–' },
+                    { title: 'Added', cell: (entry) => formatDate(entry.createdAt) },
+                    ...(admin
+                        ? [{
+                            title: '',
+                            class: 'actions',
+                            cell: (entry) => button('Remove', async () => {
+                                await api('DELETE', `/blocklists/allowed/${entry.id}`);
+                                notice('ok', `${entry.name} is no longer allowed`);
+                                await load();
+                            }, 'small danger'),
+                        }]
+                        : []),
+                ],
+                allowed.items,
+                'No name is allowed in spite of the lists.'
+            )
+        );
+    };
+
+    $page.append(
+        head('Blocklists', admin ? button('Add blocklist', () => blocklistDialog(null, load), 'primary') : null),
+        el('p', {
+            class: 'muted',
+            text: 'Lists of names the server does not look up: advertising, trackers, malware. A list is a hosts file or a list of names at an address, and is downloaded again regularly. The own zones and the standalone records come before the lists.',
+        }),
+        $state,
+        $lists,
+        el('div', { class: 'toolbar page-head section-head' }, el('h3', { text: 'Allowed names' }), el('span', { class: 'spacer' }), admin ? button('Allow a name', () => allowedDialog(load)) : null),
+        el('p', { class: 'muted', text: 'These names, and the names below them, are looked up even when a list blocks them.' }),
+        $allowed
+    );
+    await load();
+}
+
+function blocklistDialog(list, done) {
+    formDialog({
+        title: list ? `Edit blocklist ${list.name}` : 'Add blocklist',
+        intro: list ? null : 'The list is downloaded when it is saved, which can take a moment.',
+        fields: [
+            { name: 'name', label: 'Name', value: list?.name, required: true, maxlength: 100, placeholder: 'StevenBlack hosts' },
+            {
+                name: 'url', label: 'Address of the list', type: 'url', value: list?.url, required: true, placeholder: BLOCKLIST_EXAMPLE,
+                hint: 'A hosts file ("0.0.0.0 ads.example.com") or a list of names, over http or https.',
+            },
+            {
+                name: 'subdomains', label: 'Also block the names below the names of the list', type: 'checkbox', value: list ? list.subdomains : false,
+                hint: 'Lists of hosts name every name themselves, and do not need it.',
+            },
+            { name: 'active', label: 'Active: used by the DNS server', type: 'checkbox', value: list ? list.active : true },
+        ],
+        onSubmit: async (values) => {
+            const saved = list ? await api('PATCH', `/blocklists/${list.id}`, { body: values }) : await api('POST', '/blocklists', { body: values });
+            if (saved.lastError) notice('error', `${saved.name} is saved, but could not be downloaded: ${saved.lastError}`);
+            else notice('ok', `${saved.name} is saved: ${formatNumber(saved.entries, 0)} names`);
+            await done();
+        },
+    });
+}
+
+function deleteBlocklist(list, done) {
+    confirmDialog({
+        title: `Delete blocklist ${list.name}?`,
+        message: 'The names of this list are looked up again, unless another list blocks them.',
+        onConfirm: async () => {
+            await api('DELETE', `/blocklists/${list.id}`);
+            notice('ok', `Blocklist ${list.name} is deleted`);
+            await done();
+        },
+    });
+}
+
+function allowedDialog(done) {
+    formDialog({
+        title: 'Allow a name',
+        fields: [
+            { name: 'name', label: 'Name', required: true, placeholder: 'example.com', hint: 'The name and every name below it.' },
+            { name: 'note', label: 'Note', maxlength: 200, placeholder: 'Why it is allowed' },
+        ],
+        submitLabel: 'Allow',
+        onSubmit: async (values) => {
+            const entry = await api('POST', '/blocklists/allowed', { body: values });
+            notice('ok', `${entry.name} is allowed`);
+            await done();
+        },
+    });
+}
+
 ///--- Lookup
 
 const LOOKUP_ERRORS = {
@@ -621,7 +796,7 @@ export function lookup($page) {
                 : badge(`${r.answers.length} record(s)`, 'ok');
             $result.empty().append(
                 card(`${r.type} ${r.name}`, [
-                    ['Answered from', { zone: `the zone ${r.zone}`, records: 'the standalone records' }[r.source] || 'the upstream DNS servers'],
+                    ['Answered from', { zone: `the zone ${r.zone}`, records: 'the standalone records', blocklist: 'the blocklists: the name is blocked' }[r.source] || 'the upstream DNS servers'],
                     ['Result', outcome],
                     ['Time', `${r.ms} ms`],
                 ]).append(r.answers.length ? el('ul', { class: 'mono' }, r.answers.map((answer) => el('li', { text: answer }))) : null)
@@ -920,9 +1095,12 @@ const SOURCES = { environment: 'Environment', saved: 'Saved here', default: 'Def
 function settingText(setting, value) {
     if (value === undefined) return el('span', { class: 'muted', text: 'not shown' });
     if (setting.type === 'bool') return value ? 'Yes' : 'No';
+    if (setting.options) return setting.options.find((option) => option.value === value)?.text ?? String(value);
     if (setting.type === 'list') return value.length ? value.join(', ') : el('span', { class: 'muted', text: 'none' });
     return value === '' ? el('span', { class: 'muted', text: 'empty' }) : String(value);
 }
+
+const settingDefault = (setting) => setting.options?.find((option) => option.value === setting.fallback)?.text ?? setting.fallback;
 
 // The server configuration, for the admins
 export async function settings($page) {
@@ -1006,7 +1184,8 @@ function settingsDialog(group, done) {
         fields: editable.map((setting) => ({
             name: setting.key,
             label: setting.label,
-            type: { bool: 'checkbox', int: 'number' }[setting.type] || 'text',
+            type: setting.options ? 'select' : { bool: 'checkbox', int: 'number' }[setting.type] || 'text',
+            options: setting.options,
             value: shown(setting),
             min: setting.min,
             max: setting.type === 'int' ? setting.max : undefined,
@@ -1015,7 +1194,7 @@ function settingsDialog(group, done) {
             blank: 'empty',
             hint: [
                 setting.hint,
-                setting.type === 'bool' ? null : `Default: ${setting.type === 'list' ? setting.fallback.join(', ') || 'none' : setting.fallback}.`,
+                setting.type === 'bool' ? null : `Default: ${setting.type === 'list' ? setting.fallback.join(', ') || 'none' : settingDefault(setting)}.`,
                 setting.live ? null : 'Takes effect after a restart.',
             ].filter(Boolean).join(' '),
         })),

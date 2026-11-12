@@ -29,6 +29,7 @@ It brings four packages together:
 | Zones and records stored in MongoDB, answered from memory | Available |
 | Management of zones and records through the API | Available |
 | Standalone records: single names without a zone | Available |
+| Blocklists: names that are not looked up, from lists such as hosts files | Available |
 | Settings changed by the admins in the browser | Available |
 | Graphs of the queries, the answer time, the memory and the cache | Available |
 | Zone transfers (AXFR) to secondary servers | Planned |
@@ -124,6 +125,9 @@ environment variable, what was saved in the browser, its default.
 | `ODIN_NS_CACHE_ENABLED` | `true` | Keep answers in memory |
 | `ODIN_NS_CACHE_MAX_ENTRIES` | `10000` | Size of the cache; the oldest entry is dropped when it is full |
 | `ODIN_NS_NEGATIVE_CACHE_TTL` | `30` | Seconds a "no such name" or "no such record" answer is kept |
+| `ODIN_NS_BLOCKING_ENABLED` | `true` | Block the names of the [blocklists](#blocklists) |
+| `ODIN_NS_BLOCK_MODE` | `null` | The answer for a blocked name: `null` for the address `0.0.0.0`, `nxdomain` for "no such name" |
+| `ODIN_NS_BLOCKLIST_REFRESH` | `24` | Hours between two downloads of a blocklist |
 
 ### Management API
 
@@ -153,8 +157,8 @@ there is written to `config/settings.json` (`ODIN_SETTINGS_FILE` names another
 file), which is not part of the repository.
 
 - **At once** – the name of the server and the company, the upstream servers
-  with their timeout and attempts, the cache, and the time between two checks
-  of the database change while the server runs. A change of the upstream
+  with their timeout and attempts, the cache, the blocking, and the time
+  between two checks of the database change while the server runs. A change of the upstream
   empties the cache.
 - **After a restart** – the addresses, ports and listeners, the roles, logging
   and the environment type are saved, and take effect at the next start. The
@@ -233,6 +237,36 @@ They are kept in memory and refreshed together with the zones.
 
 ![The standalone records](docs/screenshots/records.png)
 
+### Blocklists
+
+A blocklist is a list of names the server does not look up: advertising,
+trackers, malware. It is given by its address, such as
+`https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts`, on the
+Blocklists page or through `/api/blocklists`. The server downloads it, keeps
+its names in MongoDB, and answers them from memory.
+
+- **Formats** – the lines of a hosts file (`0.0.0.0 ads.example.com`), plain
+  names, and the `||ads.example.com^` lines of the filter lists of ad
+  blockers. The names a hosts file has for the machine itself, such as
+  `localhost`, are left out.
+- **The answer** – a blocked name gets the address `0.0.0.0` (`::` for AAAA,
+  and an empty answer for the other types), or "no such name" with
+  `ODIN_NS_BLOCK_MODE=nxdomain`. It is not sent to the upstream.
+- **Exact names** – a hosts file names every name itself, so only the names of
+  the list are blocked. A list can be set to block the names below its names as
+  well.
+- **Allowed names** – a name that is allowed, and every name below it, is
+  looked up even when a list blocks it.
+- **Own names come first** – the names of the zones and the standalone records
+  are never blocked.
+- **Refresh** – a list is downloaded again every `ODIN_NS_BLOCKLIST_REFRESH`
+  hours, and on request. When a download fails, the names of the last one stay
+  in use, the reason is shown with the list, and it is tried again 15 minutes
+  later.
+
+Only admins add and change the lists, as the server downloads from the
+addresses they give. A download is limited to 64 MB.
+
 ### Forwarding
 
 Every other query is answered with the records the upstream DNS servers have
@@ -264,7 +298,8 @@ It follows the light or dark mode of the system.
 | Zones | signed in | List and search the zones; add, edit and delete them |
 | *a zone* | signed in | The SOA record and the records of a zone; add, edit and delete records |
 | Records | signed in | The standalone records, which belong to no zone; add, edit and delete them |
-| Lookup | signed in | Asks the DNS server for a name, and shows where the answer came from |
+| Blocklists | signed in | The blocklists with their state, and the allowed names. Admins add, update and delete them |
+| Lookup | signed in | Asks the DNS server for a name, and shows where the answer came from: a zone, the standalone records, a blocklist or the upstream |
 | Users | admin | List, add, edit and delete users, and set their passwords |
 | Logs | admin | The general, error and security log of a day |
 | Settings | admin | The configuration of the server; see [Settings](#settings) |
@@ -329,12 +364,17 @@ These endpoints are the ones of freya-ns-api; see its
 [documentation](https://github.com/csabatibortoth/freya-ns-api#api) for the
 details of every endpoint.
 
-The manager adds these, for the standalone records and the service itself:
+The manager adds these, for the standalone records, the blocklists and the service itself:
 
 | Method | Path | Who | Purpose |
 | --- | --- | --- | --- |
 | GET, POST | `/records` | signed in, admin | List and create standalone records: `{ name, type, data, ttl?, active? }`, with a fully qualified name |
 | GET, PATCH, DELETE | `/records/:recordId` | signed in, admin | Read, update and delete a standalone record |
+| GET, POST | `/blocklists` | signed in, admin | List and create blocklists: `{ name, url, subdomains?, active? }`. A new list is downloaded at once |
+| GET, PATCH, DELETE | `/blocklists/:listId` | signed in, admin | Read, update and delete a blocklist |
+| POST | `/blocklists/:listId/update` | admin | Downloads the list now |
+| GET, POST | `/blocklists/allowed` | signed in, admin | List and add allowed names: `{ name, note? }` |
+| DELETE | `/blocklists/allowed/:allowedId` | admin | Removes an allowed name |
 | GET | `/service/info` | anyone | Name, version and build, and whether signing in is needed |
 | GET | `/service/status` | signed in | The state of the service, the DNS server, the zones and the cache |
 | GET | `/service/metrics?range=` | signed in | The history of the queries, the answer time, the memory and the cache: `15m`, `1h`, `6h` or `24h` |
@@ -359,8 +399,8 @@ general log.
 npm test
 ```
 
-The tests ask a DNS server on a local port for the names of zones and
-standalone records that are held in memory, and change the settings in a
+The tests ask a DNS server on a local port for the names of zones, standalone
+records and blocklists that are held in memory, and change the settings in a
 temporary file; they need no database.
 
 ## Project layout
@@ -370,6 +410,8 @@ temporary file; they need no database.
 | `server.js` | Entry point: starts the DNS server, the management API and the user interface |
 | `config/` | Configuration: the settings, their defaults, and the file the admins save them to |
 | `model/mongoDB/standaloneRecordModel.js` | The standalone records in MongoDB |
+| `model/mongoDB/blocklistModel.js` | The blocklists and the allowed names in MongoDB |
+| `services/serverService/blockService.js` | The blocklists: downloading, loading from MongoDB and answering from memory |
 | `services/serverService/zoneService.js` | The own zones and standalone records: loading from MongoDB and answering from memory |
 | `services/serverService/searchService.js` | Upstream lookups and the in-memory cache |
 | `services/serverService/statusService.js` | Counters of the DNS server and their history, for the dashboard |
@@ -377,6 +419,7 @@ temporary file; they need no database.
 | `services/apiService/apiService.js` | Database connection, start and stop of the management API, logging |
 | `services/apiService/serviceRoutes.js` | The `/api/service` endpoints |
 | `services/apiService/recordRoutes.js` | The `/api/records` endpoints of the standalone records |
+| `services/apiService/blocklistRoutes.js` | The `/api/blocklists` endpoints |
 | `services/uiService/uiService.js` | Serves the user interface |
 | `ui/` | The user interface: page, theme and scripts |
 | `docs/screenshots/` | Screenshots of the user interface |
@@ -391,6 +434,12 @@ temporary file; they need no database.
 - **Standalone records.** DNS records that belong to no zone: single names
   the server answers itself. Managed on the new Records page and through
   `/api/records`. See [Standalone records](#standalone-records).
+- **Blocklists.** Lists of names that are not looked up, downloaded from
+  their address: hosts files such as the one of StevenBlack, lists of names,
+  and filter lists. With allowed names for the exceptions, a "Blocked" series
+  on the dashboard, and the settings `ODIN_NS_BLOCKING_ENABLED`,
+  `ODIN_NS_BLOCK_MODE` and `ODIN_NS_BLOCKLIST_REFRESH`. See
+  [Blocklists](#blocklists).
 - **Settings page.** Admins change the configuration of the server in the
   browser. The settings of the upstream, the cache and the refresh of the zones
   apply at once; the others after a restart. See [Settings](#settings).
@@ -409,6 +458,7 @@ temporary file; they need no database.
 - The saved settings are read from `config/settings.json`, after the
   environment and before the defaults.
 - A name with a standalone record is no longer forwarded.
+- The database is also connected when only the blocking needs it.
 - The address of the first page is `#/dashboard`; `#/status` leads there.
 
 ### 2.2.0

@@ -13,6 +13,7 @@ const MENU = [
     { label: 'Dashboard', route: 'dashboard', render: pages.dashboard },
     { label: 'Zones', route: 'zones', render: pages.zones },
     { label: 'Records', route: 'records', render: pages.records },
+    { label: 'Blocklists', route: 'blocklists', render: pages.blocklists },
     { label: 'Lookup', route: 'lookup', render: pages.lookup },
     { label: 'Users', route: 'users', render: pages.users, admin: true },
     { label: 'Logs', route: 'logs', render: pages.logs, admin: true },

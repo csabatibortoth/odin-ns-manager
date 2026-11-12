@@ -45,6 +45,7 @@ async function connectDb() {
     const manager = require('freya-ns-api/model/mongoDB/manager');
     // Our own model has to be known before the connection is made, for its indexes
     require('../../model/mongoDB/standaloneRecordModel');
+    require('../../model/mongoDB/blocklistModel');
     await manager.connectToDB();
     modelService = manager;
 }
@@ -71,6 +72,7 @@ async function startApi({ onDnsChange } = {}) {
     app.disable('x-powered-by');
     app.use('/api/service', require('./serviceRoutes').createRouter());
     app.use('/api/records', require('./recordRoutes').createRouter());
+    app.use('/api/blocklists', require('./blocklistRoutes').createRouter());
     if (config.uiEnabled) app.use(require('../uiService/uiService').createUi());
     app.use(createApp());
 

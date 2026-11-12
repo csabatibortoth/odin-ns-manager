@@ -9,6 +9,7 @@ const { Resolver } = require('dns').promises;
 const express = require('express');
 
 const config = require('../../config/config');
+const blockService = require('../serverService/blockService');
 const build = require('../serverService/buildInfo');
 const searchService = require('../serverService/searchService');
 const statusService = require('../serverService/statusService');
@@ -54,6 +55,7 @@ function status() {
             queries: { ...statusService.queries },
         },
         zones: { enabled: config.nsZonesEnabled, refresh: config.nsZoneRefresh, ...zoneService.state() },
+        blocking: blockService.state(),
         cache: { enabled: config.nsCacheEnabled, entries: searchService.cacheSize(), max: config.nsCacheMaxEntries },
         upstream: searchService.upstreamServers(),
     };
@@ -79,6 +81,7 @@ async function lookup(query) {
     let source = 'upstream';
     if (zone) source = 'zone';
     else if (zoneService.isStandalone(name)) source = 'records';
+    else if (blockService.isBlocked(name)) source = 'blocklist';
     const result = { name, type, zone, source, answers: [], error: null };
     const started = performance.now();
     try {

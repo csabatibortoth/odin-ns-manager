@@ -27,7 +27,7 @@ const isUpstream = (value) => {
     }
 };
 
-// type: string | int | bool | list. `editable: false` keeps a setting out of
+// type: string | int | bool | list; a string with `options` is one of them. `editable: false` keeps a setting out of
 // the user interface; `secret` keeps its value out of it as well.
 const SETTINGS = [
     { group: 'General', key: 'serverName', env: 'ODIN_SERVER_NAME', type: 'string', fallback: 'odin-ns-manager-1', label: 'Server name', live: true, max: 64 },
@@ -69,6 +69,16 @@ const SETTINGS = [
     {
         group: 'Forwarding', key: 'nsNegativeCacheTtl', env: 'ODIN_NS_NEGATIVE_CACHE_TTL', type: 'int', fallback: 30, label: 'Keep "no such name" answers for (seconds)',
         live: true, min: 1, max: 86400,
+    },
+
+    { group: 'Blocking', key: 'nsBlockingEnabled', env: 'ODIN_NS_BLOCKING_ENABLED', type: 'bool', fallback: true, label: 'Block the names of the blocklists', live: true },
+    {
+        group: 'Blocking', key: 'nsBlockMode', env: 'ODIN_NS_BLOCK_MODE', type: 'string', fallback: 'null', label: 'Answer for a blocked name', live: true,
+        options: [{ value: 'null', text: 'The address 0.0.0.0' }, { value: 'nxdomain', text: 'No such name' }],
+    },
+    {
+        group: 'Blocking', key: 'nsBlocklistRefresh', env: 'ODIN_NS_BLOCKLIST_REFRESH', type: 'int', fallback: 24, label: 'Download the lists every (hours)',
+        live: true, min: 1, max: 720,
     },
 
     { group: 'Management API', key: 'apiEnabled', env: 'ODIN_API_ENABLED', type: 'bool', fallback: true, label: 'Management API', editable: false },
@@ -135,6 +145,9 @@ function parse(setting, value) {
         if (setting.max && value.length > setting.max) fail(`must be at most ${setting.max} characters`);
     }
 
+    if (setting.options && !setting.options.some((option) => option.value === value)) {
+        fail(`must be one of: ${setting.options.map((option) => option.value).join(', ')}`);
+    }
     const checked = setting.check ? setting.check(value) : true;
     if (checked !== true) fail(checked);
     return value;
@@ -165,8 +178,13 @@ function readStored() {
 
 let stored = readStored();
 
-// The value a setting has when the server starts now
-const wanted = (setting) => fromEnv(setting) ?? stored[setting.key] ?? setting.fallback;
+// The value a setting has when the server starts now. A value of the
+// environment that is not one of the options of the setting is not used.
+function wanted(setting) {
+    let value = fromEnv(setting);
+    if (value !== undefined && setting.options && !setting.options.some((option) => option.value === value)) value = undefined;
+    return value ?? stored[setting.key] ?? setting.fallback;
+}
 
 const config = {};
 for (const setting of SETTINGS) config[setting.key] = wanted(setting);
@@ -197,6 +215,7 @@ function describe() {
             label: setting.label,
             type: setting.type,
             hint: setting.hint,
+            options: setting.options,
             min: setting.min,
             max: setting.max,
             env: setting.env,
