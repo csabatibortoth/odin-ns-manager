@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.2.0** - see the [release notes](#release-notes).
+Current version: **2.2.2** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -267,6 +267,8 @@ its names in MongoDB, and answers them from memory.
 Only admins add and change the lists, as the server downloads from the
 addresses they give. A download is limited to 64 MB.
 
+![The blocklists and the allowed names](docs/screenshots/blocklists.png)
+
 ### Forwarding
 
 Every other query is answered with the records the upstream DNS servers have
@@ -326,10 +328,11 @@ The screenshots are of a demo installation with sample zones and records, and ge
 | ![Adding a record](docs/screenshots/add-record.png) **Adding a record**: the fields follow the type | ![A record that is not valid](docs/screenshots/record-validation.png) **A value that is not valid** is marked at its field |
 | ![The record is added](docs/screenshots/record-added.png) **Saved**: the serial of the zone is raised | ![Lookup](docs/screenshots/lookup.png) **Lookup**, answered from an own zone |
 | ![Standalone records](docs/screenshots/records.png) **Records**: the standalone records, without a zone | ![Adding a standalone record](docs/screenshots/add-standalone-record.png) **Adding a standalone record**, with its whole name |
-| ![Settings](docs/screenshots/settings.png) **Settings**: where a value comes from, and when a change applies | ![Editing settings](docs/screenshots/settings-edit.png) **Editing the settings** of a group |
-| ![Users](docs/screenshots/users.png) **Users** | ![Account](docs/screenshots/account.png) **Account**: the profile and the password of the signed-in user |
-| ![Logs](docs/screenshots/logs.png) **Logs** | ![Dark mode](docs/screenshots/zones-dark.png) **Dark mode** |
-| ![The dashboard in dark mode](docs/screenshots/dashboard-dark.png) **Dashboard** in dark mode |  |
+| ![Blocklists](docs/screenshots/blocklists.png) **Blocklists**, with the allowed names | ![Adding a blocklist](docs/screenshots/add-blocklist.png) **Adding a blocklist** by its address |
+| ![Lookup of a blocked name](docs/screenshots/lookup-blocked.png) **Lookup** of a name that is blocked | ![Settings](docs/screenshots/settings.png) **Settings**: where a value comes from, and when a change applies |
+| ![Editing settings](docs/screenshots/settings-edit.png) **Editing the settings** of a group | ![Users](docs/screenshots/users.png) **Users** |
+| ![Account](docs/screenshots/account.png) **Account**: the profile and the password of the signed-in user | ![Logs](docs/screenshots/logs.png) **Logs** |
+| ![Dark mode](docs/screenshots/zones-dark.png) **Dark mode** | ![The dashboard in dark mode](docs/screenshots/dashboard-dark.png) **Dashboard** in dark mode |
 
 ## Management API
 
@@ -427,7 +430,7 @@ temporary file; they need no database.
 
 ## Release notes
 
-### Unreleased
+### 2.2.2
 
 #### Added
 
@@ -460,6 +463,26 @@ temporary file; they need no database.
 - A name with a standalone record is no longer forwarded.
 - The database is also connected when only the blocking needs it.
 - The address of the first page is `#/dashboard`; `#/status` leads there.
+
+#### Upgrading from 2.2.0
+
+- No data has to be migrated: the collections of the standalone records, the
+  blocklists and the allowed names, and their indexes, are created on the
+  first start.
+- Nothing is blocked until a blocklist is added. Set
+  `ODIN_NS_BLOCKING_ENABLED=false` to keep the blocking off altogether.
+- `config/settings.json` is written when an admin saves a setting in the
+  browser. The environment variables keep their precedence, so an installation
+  that is configured by them behaves as before.
+- The `status` screenshots and the `#/status` address are replaced by the
+  dashboard.
+
+#### Not yet included
+
+- Zone transfers (AXFR) are refused, and responses have no authority section.
+- A name that is an alias (CNAME) of a blocked name is not blocked.
+- The server does not restart itself: the settings that need a restart wait
+  for the next start of the service.
 
 ### 2.2.0
 
