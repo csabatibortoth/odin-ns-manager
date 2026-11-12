@@ -1,6 +1,7 @@
-// The part of the API that is about this service itself: its status, the
-// maintenance of the DNS server, and its logs. Mounted at /api/service, next
-// to the API of freya-ns-api, and answering in the same way.
+// The part of the API that is about this service itself: its status and the
+// history of it, its settings, the maintenance of the DNS server, and its
+// logs. Mounted at /api/service, next to the API of freya-ns-api, and
+// answering in the same way.
 const fs = require('fs');
 const net = require('net');
 const path = require('path');
@@ -8,6 +9,7 @@ const { Resolver } = require('dns').promises;
 const express = require('express');
 
 const config = require('../../config/config');
+const build = require('../serverService/buildInfo');
 const searchService = require('../serverService/searchService');
 const statusService = require('../serverService/statusService');
 const zoneService = require('../serverService/zoneService');
@@ -39,6 +41,7 @@ function status() {
         name: config.serverName,
         company: config.companyName,
         version: config.version,
+        build,
         type: config.type,
         startedAt: statusService.startedAt,
         uptime: Math.round(process.uptime()),
@@ -72,7 +75,11 @@ async function lookup(query) {
     const resolver = new Resolver({ timeout: 3000, tries: 1 });
     resolver.setServers([nameServerAddress()]);
 
-    const result = { name, type, zone: zoneService.zoneOf(name), answers: [], error: null };
+    const zone = zoneService.zoneOf(name);
+    let source = 'upstream';
+    if (zone) source = 'zone';
+    else if (zoneService.isStandalone(name)) source = 'records';
+    const result = { name, type, zone, source, answers: [], error: null };
     const started = performance.now();
     try {
         const answers = await resolver.resolve(name, type);
@@ -128,17 +135,42 @@ async function readLog(query) {
     return { target, date, lines: entries, truncated };
 }
 
-function createRouter() {
-    const { authenticate, requireRole } = require('freya-ns-api/services/authService/authService');
-    const { logService } = require('./apiService');
-
-    const router = express.Router();
-    const adminOnly = requireRole('admin');
-
+// What every router of ours starts with: the headers of an answer of the
+// API, and the JSON body of the request
+function prepare(router) {
     router.use((req, res, next) => {
         res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
         next();
     });
+    router.use(express.json({ limit: '100kb' }));
+    return router;
+}
+
+// ... and ends with: what is not found, and the errors, answered as freya-ns-api does
+function finish(router) {
+    const { logService } = require('./apiService');
+
+    router.use((req, res) => {
+        res.status(404).json({ error: 'Not found' });
+    });
+
+    // eslint-disable-next-line no-unused-vars
+    router.use((err, req, res, next) => {
+        const status = err.status || err.statusCode || 500;
+        if (status >= 500) logService.addErrorLogErrorEntry(`${req.method} ${req.originalUrl} - `, err.stack || err);
+        res.status(status).json({ error: status >= 500 ? 'Internal server error' : err.message, details: status >= 500 ? undefined : err.details });
+    });
+
+    return router;
+}
+
+function createRouter() {
+    const { authenticate, requireRole } = require('freya-ns-api/services/authService/authService');
+    const HttpError = require('freya-ns-api/services/httpError');
+    const { logService } = require('./apiService');
+
+    const router = prepare(express.Router());
+    const adminOnly = requireRole('admin');
 
     // What a client has to know before anybody is signed in
     router.get('/info', (req, res) => {
@@ -146,6 +178,7 @@ function createRouter() {
             name: config.serverName,
             company: config.companyName,
             version: config.version,
+            build,
             authEnabled: config.authEnabled,
             dnsWriteRoles: config.dnsWriteRoles,
         });
@@ -153,6 +186,24 @@ function createRouter() {
 
     router.get('/status', authenticate, (req, res) => {
         res.json(status());
+    });
+
+    // The history of the queries, the memory and the cache, for the graphs of the dashboard
+    router.get('/metrics', authenticate, (req, res) => {
+        const range = req.query.range === undefined ? '1h' : req.query.range;
+        if (!statusService.RANGES.includes(range)) throw new HttpError(400, `range must be one of: ${statusService.RANGES.join(', ')}`);
+        res.json(statusService.history(range));
+    });
+
+    router.get('/config', authenticate, adminOnly, (req, res) => {
+        res.json(config.describe());
+    });
+
+    // body: { key: value } - null brings a setting back to its default
+    router.patch('/config', authenticate, adminOnly, (req, res) => {
+        const changed = config.update(req.body);
+        if (changed.length) logService.addSecurityLogInfoEntry('Settings changed by ', req.user.username, ': ', changed.join(', '));
+        res.json({ changed, ...config.describe() });
     });
 
     router.get('/lookup', authenticate, async (req, res) => {
@@ -176,18 +227,7 @@ function createRouter() {
         res.json(await readLog(req.query));
     });
 
-    router.use((req, res) => {
-        res.status(404).json({ error: 'Not found' });
-    });
-
-    // eslint-disable-next-line no-unused-vars
-    router.use((err, req, res, next) => {
-        const status = err.status || 500;
-        if (status >= 500) logService.addErrorLogErrorEntry(`${req.method} ${req.originalUrl} - `, err.stack || err);
-        res.status(status).json({ error: status >= 500 ? 'Internal server error' : err.message, details: status >= 500 ? undefined : err.details });
-    });
-
-    return router;
+    return finish(router);
 }
 
-module.exports = { createRouter };
+module.exports = { createRouter, prepare, finish };

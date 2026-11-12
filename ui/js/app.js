@@ -10,11 +10,13 @@ import * as pages from './pages.js';
 
 // The pages of the menu. admin: only for admins; own: only when users sign in
 const MENU = [
-    { label: 'Status', route: 'status', render: pages.status },
+    { label: 'Dashboard', route: 'dashboard', render: pages.dashboard },
     { label: 'Zones', route: 'zones', render: pages.zones },
+    { label: 'Records', route: 'records', render: pages.records },
     { label: 'Lookup', route: 'lookup', render: pages.lookup },
     { label: 'Users', route: 'users', render: pages.users, admin: true },
     { label: 'Logs', route: 'logs', render: pages.logs, admin: true },
+    { label: 'Settings', route: 'settings', render: pages.settings, admin: true },
     { label: 'Account', route: 'account', render: pages.account, own: true },
     { label: 'Sign out', action: signOut, own: true },
 ];
@@ -50,10 +52,31 @@ function buildMenu() {
         });
 
     if (session.user) {
-        const who = session.user.displayName || session.user.username;
-        $('#header_menu_container').append(el('span', { id: 'session_user', text: `${who} · ${session.user.role}` }));
+        const who = `${session.user.displayName || session.user.username} · ${session.user.role}`;
+        // The way to the own account, for the users that have one
+        $('#header_menu_container').append(
+            session.user.id
+                ? el('a', { id: 'session_user', href: '#/account', title: 'Your account', text: who })
+                : el('span', { id: 'session_user', text: who })
+        );
     }
+    showFooter();
     markActive();
+}
+
+// The footer of Athena UI: the name of the server, its version and its build.
+// Written again with the menu, as the name can be changed in the settings.
+function footerText() {
+    const info = session.info;
+    const names = [info?.name, info?.company].filter(Boolean).join(' · ') || 'Odin NS Manager';
+    return [names, info?.version ? `v${info.version}` : null, pages.buildText(info?.build)].filter(Boolean).join(' · ');
+}
+
+function showFooter() {
+    const build = session.info?.build;
+    $('#copyright_text')
+        .text(footerText())
+        .attr('title', build?.date ? `Built from the commit of ${new Date(build.date).toLocaleString()}` : null);
 }
 
 // Called by Athena UI with the label of the menu item that was clicked
@@ -80,7 +103,7 @@ async function route() {
     const [, page, id] = currentRoute();
     const item = MENU.find((candidate) => candidate.route === page && allowed(candidate));
     if (!item) {
-        location.replace('#/status');
+        location.replace('#/dashboard');
         return;
     }
 
@@ -177,13 +200,13 @@ async function start() {
         }
     }
 
-    const company = session.info?.company;
     await init({
         theme: { href: 'css/theme.css' },
         config: {
             header_title_text: 'Odin NS Manager',
             header_img_url: 'img/logo.svg',
-            copyright: [session.info?.name, company].filter(Boolean).join(' · ') || 'Odin NS Manager',
+            // The footer is written by showFooter, with the build next to the version
+            copyright: 'Odin NS Manager',
             version: session.info?.version || '–',
             bordered: false,
             login_enabled: true,

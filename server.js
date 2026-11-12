@@ -23,12 +23,13 @@ function listen(method, transport) {
 nameServer.on('query', async (query) => {
     if (config.type === 'DEV') console.log('DNS Query: (%s) %s', query.type(), query.name());
 
+    const started = performance.now();
     try {
-        // Our own zones first; every other name is looked up at the upstream
+        // Our own zones and standalone records first; every other name is looked up at the upstream
         const own = await zoneService.resolve(query);
         if (!own) await searchService.resolve(query);
         nameServer.send(query);
-        statusService.countQuery(own ? 'zones' : 'forwarded');
+        statusService.countQuery(own || 'forwarded', performance.now() - started);
     } catch (err) {
         statusService.countQuery('failed');
         logService.addErrorLogErrorEntry(`DNS Query failed: (${query.type()}) ${query.name()} - `, err.stack || err);
@@ -55,6 +56,9 @@ async function main() {
 
     console.log('Unknown names are looked up at %s', searchService.upstreamServers().join(', '));
     for (let target = 0; target < 3; target++) logService.addLogEntry(target, 0, 'Server Started! - ', config.version);
+
+    // The history of the dashboard
+    statusService.start(() => ({ memory: process.memoryUsage().rss, cache: searchService.cacheSize() }));
 
     // The DNS server keeps running, as a forwarder, when the database can not
     // be reached or the management API can not start
@@ -90,6 +94,7 @@ async function main() {
         logService.addInfoLogBasicInfoEntry('Server stopping - ', signal);
         nameServer.close();
         zoneService.stop();
+        statusService.stop();
         await stopApi().catch(() => {});
         process.exit(0);
     };

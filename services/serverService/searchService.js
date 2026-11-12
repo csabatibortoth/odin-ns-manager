@@ -9,11 +9,16 @@ const named = require('njord-ns-server');
 const { lookup } = require('bragi-ns-client');
 const config = require('../../config/config');
 
-const recursor = named.createRecursor({
-    servers: config.nsUpstreamServers.length ? config.nsUpstreamServers : undefined,
-    timeout: config.nsUpstreamTimeout,
-    tries: config.nsUpstreamTries,
-});
+const UPSTREAM_SETTINGS = ['nsUpstreamServers', 'nsUpstreamTimeout', 'nsUpstreamTries'];
+
+const createRecursor = () =>
+    named.createRecursor({
+        servers: config.nsUpstreamServers.length ? config.nsUpstreamServers : undefined,
+        timeout: config.nsUpstreamTimeout,
+        tries: config.nsUpstreamTries,
+    });
+
+let recursor = createRecursor();
 
 // What a failed lookup means for the response to our own client; anything
 // that is not listed is a failure of the server.
@@ -97,6 +102,17 @@ async function resolve(query) {
 function clearCache() {
     cache.clear();
 }
+
+// The settings of the upstream and of the cache can be changed while the
+// server runs. Lookups that are in flight finish at the upstream they were sent to.
+config.onChange((keys) => {
+    if (keys.some((key) => UPSTREAM_SETTINGS.includes(key))) {
+        recursor = createRecursor();
+        clearCache(); // what another upstream answered is not ours to keep
+    }
+    if (!config.nsCacheEnabled) clearCache();
+    while (cache.size > config.nsCacheMaxEntries) cache.delete(cache.keys().next().value);
+});
 
 module.exports = {
     search,

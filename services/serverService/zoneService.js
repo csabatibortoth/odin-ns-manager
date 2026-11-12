@@ -1,5 +1,6 @@
 // Answers the queries for the names of our own zones: the zones and records
-// that are managed through the API (freya-ns-api) and stored in MongoDB.
+// that are managed through the API (freya-ns-api) and stored in MongoDB. The
+// standalone records, which belong to no zone, are answered here as well.
 //
 // - The active zones are kept in memory, so a query never waits for the database.
 // - Every change raises the serial of its zone; a zone is read again when its
@@ -16,6 +17,7 @@ const cleanName = (name) => name.toLowerCase().replace(/\.$/, '');
 const parentOf = (name) => name.slice(name.indexOf('.') + 1);
 
 let zones = new Map(); // name of the zone -> zone, as built by buildZone
+let standalone = { nodes: new Map(), records: 0, skipped: [] }; // as built by buildStandalone
 
 // The stored data holds the constructor arguments of the record classes of njord-ns-server
 function toRecord(type, data) {
@@ -56,6 +58,40 @@ function replaceZones(list) {
     zones = new Map(list.map((zone) => [zone.name, zone]));
 }
 
+// records are the plain documents of the standalone records. Returns them in
+// the form the lookups use: name -> Map of type -> [{ record, ttl }].
+function buildStandalone(records) {
+    const nodes = new Map();
+    const skipped = [];
+    for (const { name, type, data, ttl } of records) {
+        try {
+            const record = toRecord(type, data);
+            if (!nodes.has(name)) nodes.set(name, new Map());
+            const node = nodes.get(name);
+            if (!node.has(type)) node.set(type, []);
+            node.get(type).push({ record, ttl: ttl ?? 3600 });
+        } catch (err) {
+            skipped.push(`${type} ${name}: ${err.message}`);
+        }
+    }
+    return { nodes, skipped, records: records.length - skipped.length };
+}
+
+function replaceStandalone(built) {
+    standalone = built;
+}
+
+// The standalone records of a name: its own, or the ones of the closest
+// wildcard above it.
+function findStandalone(name) {
+    let node = standalone.nodes.get(name);
+    for (let rest = name; !node && rest.includes('.'); ) {
+        rest = parentOf(rest);
+        node = standalone.nodes.get(`*.${rest}`);
+    }
+    return node;
+}
+
 // The zone a name belongs to: the one with the longest matching name
 function findZone(name) {
     for (let rest = name; ; rest = parentOf(rest)) {
@@ -79,47 +115,61 @@ function lookup(zone, name, type) {
     return node.get(type) || node.get('CNAME') || [];
 }
 
-// Answers a query of the server when its name is in one of our zones. Returns
-// false when it is not, and the query is left for the upstream lookup.
+// What we hold for a name: { source: 'zones' | 'records', found } - found as
+// lookup returns it - or null when the name is not ours. A zone comes before
+// the standalone records, which are for the names outside of the zones.
+function own(name, type) {
+    const zone = findZone(name);
+    if (zone) return { source: 'zones', found: lookup(zone, name, type) };
+    const node = findStandalone(name);
+    // The name is ours with all of its types: the ones it has no record of are not forwarded
+    if (node) return { source: 'records', found: node.get(type) || node.get('CNAME') || [] };
+    return null;
+}
+
+// Answers a query of the server when its name is in one of our zones, or has
+// standalone records. Returns where the answer is from, 'zones' or 'records';
+// or false when the name is not ours, and the query is left for the upstream lookup.
 async function resolve(query) {
     const type = query.type();
     let owner = query.name();
     let name = cleanName(owner);
-    let zone = findZone(name);
-    if (!zone) return false;
+    let held = own(name, type);
+    if (!held) return false;
+    const { source } = held;
 
     query._flags.aa = true; // the answer is our own
     query._flags.ra = true;
     if (type === 'AXFR') {
         query.setError('erefuse'); // zone transfers are not offered
-        return true;
+        return source;
     }
 
     for (let hop = 0; hop <= MAX_CNAME_HOPS; hop++) {
-        const found = lookup(zone, name, type);
+        const { found } = held;
         if (found === null) {
             if (hop === 0) query.setError('enoname');
-            return true;
+            return source;
         }
         for (const answer of found) query.addAnswer(owner, answer.record, answer.ttl);
 
         // An alias is followed, so the client gets the records it asked for as well
         const alias = type !== 'CNAME' && found[0]?.record._type === 'CNAME' ? found[0].record.target : null;
-        if (!alias) return true;
+        if (!alias) return source;
 
         owner = alias;
         name = cleanName(alias);
-        zone = findZone(name);
-        if (!zone) {
+        held = own(name, type);
+        if (!held) {
             try {
                 for (const answer of await searchService.search(name, type)) query.addAnswer(owner, answer.record, answer.ttl);
             } catch {
                 // The alias itself is still a valid answer
             }
-            return true;
+            return source;
         }
     }
-    return true;
+    return source;
 }
 
 ///--- Loading from the database
@@ -127,6 +177,7 @@ async function resolve(query) {
 // Required late: freya-ns-api reads its settings when it is first loaded, and
 // the lookups above have to work without a database.
 const models = () => require('freya-ns-api/model/mongoDB/manager');
+const standaloneModel = () => require('../../model/mongoDB/standaloneRecordModel');
 const logs = () => require('../apiService/apiService').logService;
 
 let running = null;
@@ -135,6 +186,7 @@ let timer = null;
 let failing = false;
 let checkedAt = null; // the last time the database was read
 let changedAt = null; // the last time that brought a change
+let standaloneStamp = '';
 
 async function load() {
     const { Zone, Record } = models();
@@ -160,12 +212,26 @@ async function load() {
         }
     }
 
+    // The standalone records are few: they are read whole, and built again when one of them differs
+    const loose = await standaloneModel().find({ active: true }).lean();
+    const stamp = loose.map((record) => `${record._id}:${record.updatedAt?.getTime()}`).sort().join();
+    const standaloneChanged = stamp !== standaloneStamp;
+    if (standaloneChanged) {
+        const built = buildStandalone(loose);
+        for (const reason of built.skipped) logs().addErrorLogErrorEntry('Standalone DNS record is not served - ', reason);
+        replaceStandalone(built);
+        standaloneStamp = stamp;
+    }
+
     const removed = next.length < zones.size + changed.size;
     replaceZones(next);
     checkedAt = new Date();
-    if (changed.size || removed) {
+    if (changed.size || removed || standaloneChanged) {
         changedAt = checkedAt;
-        logs().addInfoLogBasicInfoEntry('DNS zones loaded: ', next.length, ', changed: ', [...changed.values()].map(({ zone }) => zone.name).join(', ') || '-');
+        logs().addInfoLogBasicInfoEntry(
+            'DNS zones loaded: ', next.length, ', changed: ', [...changed.values()].map(({ zone }) => zone.name).join(', ') || '-',
+            ', standalone records: ', standalone.records
+        );
     }
 }
 
@@ -208,6 +274,14 @@ function stop() {
     timer = null;
 }
 
+// The time between two checks of the database can be changed while the server runs
+config.onChange((keys) => {
+    if (timer && keys.includes('nsZoneRefresh')) {
+        stop();
+        timer = setInterval(refresh, config.nsZoneRefresh * 1000).unref();
+    }
+});
+
 module.exports = {
     resolve,
     refresh,
@@ -215,12 +289,17 @@ module.exports = {
     stop,
     buildZone,
     replaceZones,
+    buildStandalone,
+    replaceStandalone,
     zoneCount: () => zones.size,
     // The name of the zone that answers for a name, if it is one of ours
     zoneOf: (name) => findZone(cleanName(name))?.name ?? null,
+    // Is the name answered from the standalone records?
+    isStandalone: (name) => !findZone(cleanName(name)) && Boolean(findStandalone(cleanName(name))),
     state: () => ({
         zones: zones.size,
         records: [...zones.values()].reduce((sum, zone) => sum + zone.records, 0),
+        standalone: standalone.records,
         watching: timer !== null,
         failing,
         checkedAt,

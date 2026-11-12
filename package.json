@@ -6,6 +6,7 @@
   "scripts": {
     "test": "node --test \"test/*.test.js\"",
     "start": "node server.js",
+    "build-info": "node services/serverService/buildInfo.js",
     "dev": "nodemon server.js"
   },
   "repository": {

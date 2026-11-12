@@ -7,7 +7,7 @@ in MongoDB, and answered by the DNS server.
 
 Current version: **2.2.0** - see the [release notes](#release-notes).
 
-![The zones of the manager](docs/screenshots/zones.png)
+![The dashboard of the manager](docs/screenshots/dashboard.png)
 
 It brings four packages together:
 
@@ -28,6 +28,9 @@ It brings four packages together:
 | Management API: users and authentication | Available |
 | Zones and records stored in MongoDB, answered from memory | Available |
 | Management of zones and records through the API | Available |
+| Standalone records: single names without a zone | Available |
+| Settings changed by the admins in the browser | Available |
+| Graphs of the queries, the answer time, the memory and the cache | Available |
 | Zone transfers (AXFR) to secondary servers | Planned |
 | User interface in the browser | Available |
 
@@ -95,6 +98,10 @@ The first answer holds the `token`, the second the `id` of the zone.
 Defaults live in `config/config.js`. Every value can be overridden with an
 environment variable, so secrets do not have to be stored in the file.
 
+Admins can also change most of the settings in the browser, on the
+[Settings](#settings) page. The value of a setting is, in this order: its
+environment variable, what was saved in the browser, its default.
+
 ### General
 
 | Variable | Default | Purpose |
@@ -138,6 +145,41 @@ the settings that have no `ODIN_*` counterpart, such as `FREYA_DB_URI`,
 `FREYA_ADMIN_USER` / `FREYA_ADMIN_EMAIL` / `FREYA_ADMIN_PWD`. See the
 [freya-ns-api documentation](https://github.com/csabatibortoth/freya-ns-api#configuration).
 
+### Settings
+
+The Settings page of the user interface shows every setting with its value and
+where the value comes from, and lets the admins change them. What is saved
+there is written to `config/settings.json` (`ODIN_SETTINGS_FILE` names another
+file), which is not part of the repository.
+
+- **At once** – the name of the server and the company, the upstream servers
+  with their timeout and attempts, the cache, and the time between two checks
+  of the database change while the server runs. A change of the upstream
+  empties the cache.
+- **After a restart** – the addresses, ports and listeners, the roles, logging
+  and the environment type are saved, and take effect at the next start. The
+  page shows the saved value next to the one the server still runs with.
+- **Fixed by the environment** – a setting that has its environment variable
+  set can not be changed in the browser.
+- **Not in the browser** – `ODIN_SECRET`, the database connection,
+  `ODIN_API_ENABLED` and `ODIN_UI_ENABLED` are only set in the environment.
+  Changes that would lock everybody out are refused: switching both HTTP and
+  HTTPS off, or leaving `DEV` with the default secret.
+
+Every change is written to the security log, with the name of the admin.
+
+![The settings of the DNS server and of the forwarding](docs/screenshots/settings.png)
+
+### Build number
+
+The footer of the user interface and the dashboard show the build next to the
+version: the number of commits of the repository, and its last commit. An
+installation that is deployed without its git repository takes them from
+`build.json`, which `npm run build-info` writes before the deployment, or from
+`ODIN_BUILD_NUMBER`, `ODIN_BUILD_COMMIT` and `ODIN_BUILD_DATE`.
+
+![The build on the dashboard and in the footer](docs/screenshots/dashboard-state.png)
+
 ## DNS server
 
 ### Own zones
@@ -169,6 +211,28 @@ seconds. When the database can not be read, the zones in memory are served on.
 
 Zone transfers (AXFR) are refused, and responses have no authority section yet.
 
+### Standalone records
+
+A record does not need a zone: a standalone record is a single name the server
+answers itself, such as `nas.home.example A 10.0.0.5`, without a SOA record
+and name servers around it. They are for the names of a local network, and for
+giving a name of somebody else another answer on this server.
+
+- **The name is answered whole** – a name with standalone records is not
+  forwarded any more, also not for the types it has no record of: those get an
+  empty answer. The names around it are forwarded as before.
+- **Types, aliases, TTL** – the same record types as in a zone. A CNAME is
+  answered together with the records of its target. Every record has its own
+  TTL, 3600 seconds by default.
+- **Wildcards** – `*.dev.example` stands for every name below `dev.example`
+  that has no standalone records of its own.
+- **Zones come first** – a name inside one of the zones belongs to the zone,
+  and the API refuses a standalone record for it.
+
+They are kept in memory and refreshed together with the zones.
+
+![The standalone records](docs/screenshots/records.png)
+
 ### Forwarding
 
 Every other query is answered with the records the upstream DNS servers have
@@ -196,29 +260,41 @@ It follows the light or dark mode of the system.
 
 | Page | Who | What it does |
 | --- | --- | --- |
-| Status | signed in | The service, the DNS server and its query counts, the zones in memory, the cache and the upstream servers. Admins can reload the zones and clear the cache |
+| Dashboard | signed in | Graphs of the queries per minute, the answer time, the memory and the cache, over the last 15 minutes to 24 hours; and the state of the service, the DNS server, the zones and the upstream servers. Admins can reload the zones and clear the cache |
 | Zones | signed in | List and search the zones; add, edit and delete them |
 | *a zone* | signed in | The SOA record and the records of a zone; add, edit and delete records |
+| Records | signed in | The standalone records, which belong to no zone; add, edit and delete them |
 | Lookup | signed in | Asks the DNS server for a name, and shows where the answer came from |
 | Users | admin | List, add, edit and delete users, and set their passwords |
 | Logs | admin | The general, error and security log of a day |
-| Account | signed in | Your profile and your password |
+| Settings | admin | The configuration of the server; see [Settings](#settings) |
+| Account | signed in | Your own account: display name, e-mail and password, and for admins the username. Also reached by the name at the top of the page |
 
 Zones and records can be changed by the roles in `ODIN_DNS_WRITE_ROLES`; the
 other users see them read-only.
 
+The history behind the graphs is kept in memory: a sample every 10 seconds for
+the last hour, and one per minute for the last day. It starts empty after a
+restart. Every graph has its values as a table below it.
+
+![The values of a graph, at the pointer and as a table](docs/screenshots/dashboard-graph.png)
+
 ### Screenshots
 
-The screenshots are of a demo installation with sample zones.
+The screenshots are of a demo installation with sample zones and records, and generated queries.
 
 | | |
 | --- | --- |
-| ![Sign in](docs/screenshots/login.png) **Sign in** | ![Status](docs/screenshots/status.png) **Status** |
+| ![Sign in](docs/screenshots/login.png) **Sign in** | ![Dashboard](docs/screenshots/dashboard.png) **Dashboard**: figures and graphs of the chosen period |
+| ![The values of a graph](docs/screenshots/dashboard-graph.png) **A graph**: the values at the pointer, and all of them as a table | ![The state of the service](docs/screenshots/dashboard-state.png) **Dashboard**, further down: the state of the service, with its build |
 | ![Zones](docs/screenshots/zones.png) **Zones** | ![The records of a zone](docs/screenshots/zone-records.png) **The records of a zone** |
 | ![Adding a record](docs/screenshots/add-record.png) **Adding a record**: the fields follow the type | ![A record that is not valid](docs/screenshots/record-validation.png) **A value that is not valid** is marked at its field |
 | ![The record is added](docs/screenshots/record-added.png) **Saved**: the serial of the zone is raised | ![Lookup](docs/screenshots/lookup.png) **Lookup**, answered from an own zone |
-| ![Users](docs/screenshots/users.png) **Users** | ![Logs](docs/screenshots/logs.png) **Logs** |
-| ![Status after use](docs/screenshots/status-after-use.png) **Status** after some use | ![Dark mode](docs/screenshots/zones-dark.png) **Dark mode** |
+| ![Standalone records](docs/screenshots/records.png) **Records**: the standalone records, without a zone | ![Adding a standalone record](docs/screenshots/add-standalone-record.png) **Adding a standalone record**, with its whole name |
+| ![Settings](docs/screenshots/settings.png) **Settings**: where a value comes from, and when a change applies | ![Editing settings](docs/screenshots/settings-edit.png) **Editing the settings** of a group |
+| ![Users](docs/screenshots/users.png) **Users** | ![Account](docs/screenshots/account.png) **Account**: the profile and the password of the signed-in user |
+| ![Logs](docs/screenshots/logs.png) **Logs** | ![Dark mode](docs/screenshots/zones-dark.png) **Dark mode** |
+| ![The dashboard in dark mode](docs/screenshots/dashboard-dark.png) **Dashboard** in dark mode |  |
 
 ## Management API
 
@@ -253,12 +329,17 @@ These endpoints are the ones of freya-ns-api; see its
 [documentation](https://github.com/csabatibortoth/freya-ns-api#api) for the
 details of every endpoint.
 
-The manager adds these, for the service itself:
+The manager adds these, for the standalone records and the service itself:
 
 | Method | Path | Who | Purpose |
 | --- | --- | --- | --- |
-| GET | `/service/info` | anyone | Name, version, and whether signing in is needed |
+| GET, POST | `/records` | signed in, admin | List and create standalone records: `{ name, type, data, ttl?, active? }`, with a fully qualified name |
+| GET, PATCH, DELETE | `/records/:recordId` | signed in, admin | Read, update and delete a standalone record |
+| GET | `/service/info` | anyone | Name, version and build, and whether signing in is needed |
 | GET | `/service/status` | signed in | The state of the service, the DNS server, the zones and the cache |
+| GET | `/service/metrics?range=` | signed in | The history of the queries, the answer time, the memory and the cache: `15m`, `1h`, `6h` or `24h` |
+| GET | `/service/config` | admin | Every setting, with its value and where it comes from |
+| PATCH | `/service/config` | admin | Changes settings: `{ key: value }`; `null` brings a setting back to its default |
 | GET | `/service/lookup?name=&type=` | signed in | Asks the DNS server of the manager for a name |
 | POST | `/service/zones/reload` | admin | Reads the zones from the database now |
 | POST | `/service/cache/clear` | admin | Empties the cache of upstream answers |
@@ -278,26 +359,57 @@ general log.
 npm test
 ```
 
-The tests ask a DNS server on a local port for the names of zones that are held
-in memory; they need no database.
+The tests ask a DNS server on a local port for the names of zones and
+standalone records that are held in memory, and change the settings in a
+temporary file; they need no database.
 
 ## Project layout
 
 | Path | Contents |
 | --- | --- |
 | `server.js` | Entry point: starts the DNS server, the management API and the user interface |
-| `config/` | Configuration |
-| `services/serverService/zoneService.js` | The own zones: loading from MongoDB and answering from memory |
+| `config/` | Configuration: the settings, their defaults, and the file the admins save them to |
+| `model/mongoDB/standaloneRecordModel.js` | The standalone records in MongoDB |
+| `services/serverService/zoneService.js` | The own zones and standalone records: loading from MongoDB and answering from memory |
 | `services/serverService/searchService.js` | Upstream lookups and the in-memory cache |
-| `services/serverService/statusService.js` | Counters of the DNS server, for the status page |
+| `services/serverService/statusService.js` | Counters of the DNS server and their history, for the dashboard |
+| `services/serverService/buildInfo.js` | The build number of the running server |
 | `services/apiService/apiService.js` | Database connection, start and stop of the management API, logging |
 | `services/apiService/serviceRoutes.js` | The `/api/service` endpoints |
+| `services/apiService/recordRoutes.js` | The `/api/records` endpoints of the standalone records |
 | `services/uiService/uiService.js` | Serves the user interface |
 | `ui/` | The user interface: page, theme and scripts |
 | `docs/screenshots/` | Screenshots of the user interface |
 | `test/` | Tests |
 
 ## Release notes
+
+### Unreleased
+
+#### Added
+
+- **Standalone records.** DNS records that belong to no zone: single names
+  the server answers itself. Managed on the new Records page and through
+  `/api/records`. See [Standalone records](#standalone-records).
+- **Settings page.** Admins change the configuration of the server in the
+  browser. The settings of the upstream, the cache and the refresh of the zones
+  apply at once; the others after a restart. See [Settings](#settings).
+- **Graphs on the dashboard.** The Status page is now the Dashboard, with the
+  queries per minute, the average answer time, the memory and the cached
+  answers of the last 15 minutes to 24 hours, kept up to date while it is open.
+- **Build number** in the footer and on the dashboard. See
+  [Build number](#build-number).
+- **Account page** with the profile and the password as forms on the page.
+  Admins can change their own username; the name at the top of the page leads
+  to it.
+- **Service endpoints:** `/api/service/metrics` and `/api/service/config`.
+
+#### Changed
+
+- The saved settings are read from `config/settings.json`, after the
+  environment and before the defaults.
+- A name with a standalone record is no longer forwarded.
+- The address of the first page is `#/dashboard`; `#/status` leads there.
 
 ### 2.2.0
 
