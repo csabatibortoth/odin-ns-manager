@@ -363,6 +363,8 @@ The lists and the rules are changed by the roles in `ODIN_DNS_WRITE_ROLES`.
 The server downloads whatever address it is given: leave those roles to the
 people who are trusted with that. A download is limited to 64 MB.
 
+![The blocking: its switch, the block lists and the rules](docs/screenshots/blocking.png)
+
 ### Monitoring
 
 The DNS server reports every query it answered to the monitoring of
@@ -381,6 +383,8 @@ The queries show what every client looks up, so the monitoring can only be
 read by the roles in `ODIN_MONITORING_ROLES`. `ODIN_NS_QUERY_LOG_ENABLED=false`
 switches the recording off; `ODIN_QUERY_LOG_RETENTION_DAYS` and
 `ODIN_METRICS_RETENTION_DAYS` say how long the data is kept.
+
+![The query log](docs/screenshots/queries.png)
 
 ### DNSSEC
 
@@ -403,6 +407,8 @@ on. It is off by default.
 The dashboard counts the checked lookups, and the Lookup page shows what
 DNSSEC said about a name. The `validate` mode needs a correct system clock,
 and an upstream that hands over the DNSSEC records, which nearly all do.
+
+![Lookup of a signed name: DNSSEC signed and valid](docs/screenshots/lookup-dnssec.png)
 
 ### Forwarding
 
@@ -454,6 +460,11 @@ The menu is a sidebar next to the content. On a screen that is narrower than
 phone the rows of the tables are shown as blocks, so nothing has to be scrolled
 sideways.
 
+| | | |
+| --- | --- | --- |
+| ![The dashboard on a phone](docs/screenshots/mobile-dashboard.png) | ![The menu on a phone](docs/screenshots/mobile-menu.png) | ![The records of a zone on a phone](docs/screenshots/mobile-records.png) |
+| **Dashboard** on a phone | **The menu**, opened with the button of the header | **A table**: every row is a block |
+
 | Page | Who | What it does |
 | --- | --- | --- |
 | Dashboard | signed in | Graphs of the queries per minute, the answer time, the memory and the cache, over the last 15 minutes to 24 hours; and the state of the service, the DNS server, the zones and the upstream servers. Admins can reload the zones and clear the cache |
@@ -483,21 +494,26 @@ restart. Every graph has its values as a table below it.
 
 ### Screenshots
 
-The screenshots are of a demo installation with sample zones and records, and generated queries. They were taken with version 2.2.2: the menu and the Blocking page have changed since.
+The screenshots are of a demo installation with sample zones and records, the block lists of StevenBlack and AdAway, and generated queries.
 
 | | |
 | --- | --- |
 | ![Sign in](docs/screenshots/login.png) **Sign in** | ![Dashboard](docs/screenshots/dashboard.png) **Dashboard**: figures and graphs of the chosen period |
-| ![The values of a graph](docs/screenshots/dashboard-graph.png) **A graph**: the values at the pointer, and all of them as a table | ![The state of the service](docs/screenshots/dashboard-state.png) **Dashboard**, further down: the state of the service, with its build |
-| ![Zones](docs/screenshots/zones.png) **Zones** | ![The records of a zone](docs/screenshots/zone-records.png) **The records of a zone** |
-| ![Adding a record](docs/screenshots/add-record.png) **Adding a record**: the fields follow the type | ![A record that is not valid](docs/screenshots/record-validation.png) **A value that is not valid** is marked at its field |
-| ![The record is added](docs/screenshots/record-added.png) **Saved**: the serial of the zone is raised | ![Lookup](docs/screenshots/lookup.png) **Lookup**, answered from an own zone |
+| ![The values of a graph](docs/screenshots/dashboard-graph.png) **A graph**: the values at the pointer, and all of them as a table | ![The most asked names](docs/screenshots/dashboard-top.png) **Dashboard**, further down: the last 24 hours, the most asked and most blocked names, the busiest clients |
+| ![The state of the service](docs/screenshots/dashboard-state.png) **Dashboard**, at the end: the state of the service, with its build | ![Zones](docs/screenshots/zones.png) **Zones** |
+| ![The records of a zone](docs/screenshots/zone-records.png) **The records of a zone** | ![Adding a record](docs/screenshots/add-record.png) **Adding a record**: the fields follow the type |
+| ![A record that is not valid](docs/screenshots/record-validation.png) **A value that is not valid** is marked at its field | ![The record is added](docs/screenshots/record-added.png) **Saved**: the serial of the zone is raised |
 | ![Standalone records](docs/screenshots/records.png) **Records**: the standalone records, without a zone | ![Adding a standalone record](docs/screenshots/add-standalone-record.png) **Adding a standalone record**, with its whole name |
-| ![Blocklists](docs/screenshots/blocklists.png) **Blocklists**, with the allowed names | ![Adding a blocklist](docs/screenshots/add-blocklist.png) **Adding a blocklist** by its address |
-| ![Lookup of a blocked name](docs/screenshots/lookup-blocked.png) **Lookup** of a name that is blocked | ![Settings](docs/screenshots/settings.png) **Settings**: where a value comes from, and when a change applies |
+| ![Blocking](docs/screenshots/blocking.png) **Blocking**: the switch, the answer and the block lists | ![Adding a block list](docs/screenshots/add-blocklist.png) **Adding a block list** by its address |
+| ![The check of a domain](docs/screenshots/blocking-check.png) **Is a domain blocked?** The answer, and what decides it | ![The rules](docs/screenshots/blocking-rules.png) **Rules**: domains blocked or allowed by hand |
+| ![Adding a rule](docs/screenshots/add-rule.png) **Adding a rule**, for a domain and the names below it | ![Lookup](docs/screenshots/lookup.png) **Lookup**, answered from an own zone |
+| ![Lookup of a blocked name](docs/screenshots/lookup-blocked.png) **Lookup** of a name that is blocked | ![Lookup with DNSSEC](docs/screenshots/lookup-dnssec.png) **Lookup** of a signed name, validated with DNSSEC |
+| ![Queries](docs/screenshots/queries.png) **Queries**: the query log, with a button to block or allow a name | ![Clients](docs/screenshots/clients.png) **Clients**, with the names they were given |
+| ![Backup](docs/screenshots/backup.png) **Backup**: export and import | ![Settings](docs/screenshots/settings.png) **Settings**: where a value comes from, and when a change applies |
 | ![Editing settings](docs/screenshots/settings-edit.png) **Editing the settings** of a group | ![Users](docs/screenshots/users.png) **Users** |
 | ![Account](docs/screenshots/account.png) **Account**: the profile and the password of the signed-in user | ![Logs](docs/screenshots/logs.png) **Logs** |
 | ![Dark mode](docs/screenshots/zones-dark.png) **Dark mode** | ![The dashboard in dark mode](docs/screenshots/dashboard-dark.png) **Dashboard** in dark mode |
+| ![The blocking in dark mode](docs/screenshots/blocking-dark.png) **Blocking** in dark mode | ![The query log on a phone](docs/screenshots/mobile-queries.png) **On a phone**: the query log |
 
 ## Management API
 
@@ -621,6 +637,7 @@ brought to use.
 - **HTTPS with Let's Encrypt**, certificates that are replaced without a
   restart, and a Certificate page. See [HTTPS](#https).
 - **Swagger UI** of the API at `/api/docs`, linked from the menu.
+- **New screenshots** of every page, in the light and the dark mode and on a phone.
 - **Installers** for Debian, Ubuntu, Raspberry Pi OS, CentOS, Alpine and
   Windows, which also update and uninstall the service. See
   [Installing as a service](#installing-as-a-service).
@@ -669,7 +686,6 @@ brought to use.
 - Zone transfers (AXFR) are refused, and responses have no authority section.
 - A name that is an alias (CNAME) of a blocked name is not blocked.
 - DNSSEC is checked for A and AAAA only, and the own answers are not signed.
-- The screenshots above still show version 2.2.2.
 
 ### 2.2.2
 
