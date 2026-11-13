@@ -50,7 +50,79 @@ and the service itself are managed in the browser, or through the API.
 - A MongoDB server the manager can reach, for the management API and the zones.
   Without it the DNS server runs as a forwarder only.
 
+## Installing as a service
+
+The installers in `install/` set up a machine from nothing: they install
+Node.js and MongoDB where they are missing, download the manager, ask the
+questions of the configuration, and run it as a service that starts with the
+system. The same script updates and uninstalls it.
+
+**Linux** - Debian, Ubuntu, Raspberry Pi OS, CentOS / RHEL / Rocky / Alma (8 or
+newer) and Alpine:
+
+```
+curl -fsSLO https://raw.githubusercontent.com/csabatibortoth/odin-ns-manager/master/install/install.sh
+sudo sh install.sh install
+```
+
+**Windows** - 10, 11 or Server 2016 and newer, in PowerShell:
+
+```
+Invoke-WebRequest https://raw.githubusercontent.com/csabatibortoth/odin-ns-manager/master/install/install.ps1 -OutFile install.ps1
+powershell -ExecutionPolicy Bypass -File install.ps1 install
+```
+
+| Command | What it does |
+| --- | --- |
+| `install` | Installs what is missing, asks the questions, and starts the service |
+| `update` | Brings the program to the newest version of its branch, and restarts it. The settings and the data stay |
+| `configure` | Asks the questions again, with the current values as the defaults |
+| `status` | The version, the addresses and the state of the service |
+| `uninstall` | Removes the service and the program. Asks before the settings, the logs or the database are removed |
+
+Without a command the script shows a menu. `--branch develop` (`-Branch` on
+Windows) installs another branch, a tag or a commit; `--source <folder>`
+installs from a copy of the project instead of the repository; `--yes` asks
+nothing, and takes its answers from the `ODIN_*` variables that the head of
+each script lists.
+
+The questions are: the name of the server, the address and port of the DNS
+server, the upstream servers, DNSSEC, the query log, the port of the user
+interface or HTTPS with Let's Encrypt, where the database is, and the first
+admin account. Their answers are saved as settings, so they can be changed on
+the Settings page afterwards; only the key of the tokens, the database and the
+folders are fixed in `odin.env`.
+
+| | Linux | Windows |
+| --- | --- | --- |
+| Program | `/opt/odin-ns-manager` | `C:Program FilesOdinNsManager` |
+| `odin.env` | `/etc/odin-ns-manager` | `C:ProgramDataOdinNsManager` |
+| Settings, certificates | `/var/lib/odin-ns-manager` | `C:ProgramDataOdinNsManager` |
+| Logs | `/var/log/odin-ns-manager` | `C:ProgramDataOdinNsManagerlogs` |
+| Service | systemd, or OpenRC on Alpine; the user `odin` | A task of the Task Scheduler, as Local Service |
+| Node.js | NodeSource packages; `apk` on Alpine; the build of nodejs.org on 32-bit ARM | winget, or the installer of nodejs.org |
+
+Where MongoDB comes from depends on the system, as its makers do not build it
+for all of them:
+
+| System | MongoDB |
+| --- | --- |
+| Ubuntu (x86-64, ARM64), Debian (x86-64), CentOS / RHEL family | The packages of repo.mongodb.org, when they exist for the release; or a Docker container |
+| Raspberry Pi OS 64-bit, Debian on ARM64, Alpine | A Docker container. MongoDB 4.4 on a processor without ARMv8.2 (Raspberry Pi 4) or without AVX |
+| Raspberry Pi OS 32-bit | A MongoDB server on another machine |
+| Windows | winget (`MongoDB.Server`) |
+
+A MongoDB server that runs already, on the machine or elsewhere, can always
+be chosen instead.
+
+On Linux, when the DNS server is to listen on port 53 of every address, the
+installer offers to switch off the listener of systemd-resolved, which holds
+`127.0.0.53:53`; uninstalling switches it on again. It also offers to open the
+ports in ufw, firewalld or the Windows firewall.
+
 ## Getting started
+
+To run the manager from its folder, as for development:
 
 ```
 npm install
@@ -522,6 +594,7 @@ temporary file; they need no database.
 | `services/apiService/serviceRoutes.js` | The `/api/service` endpoints |
 | `services/apiService/migration.js` | Carries the data of the releases before 2.3.0 over |
 | `services/uiService/uiService.js` | Serves the user interface |
+| `install/` | The installers for Linux (`install.sh`) and Windows (`install.ps1`), and what they share: the launcher of the service and the writer of the settings |
 | `ui/` | The user interface: page, theme and scripts |
 | `docs/screenshots/` | Screenshots of the user interface |
 | `test/` | Tests |
@@ -548,6 +621,9 @@ brought to use.
 - **HTTPS with Let's Encrypt**, certificates that are replaced without a
   restart, and a Certificate page. See [HTTPS](#https).
 - **Swagger UI** of the API at `/api/docs`, linked from the menu.
+- **Installers** for Debian, Ubuntu, Raspberry Pi OS, CentOS, Alpine and
+  Windows, which also update and uninstall the service. See
+  [Installing as a service](#installing-as-a-service).
 - **A menu for every screen.** The menu is a sidebar, grouped by subject; on
   small screens it opens with a menu button, and the tables are readable on a
   phone without scrolling sideways.
