@@ -1,12 +1,9 @@
-const fs = require('fs');
 const http = require('http');
 const https = require('https');
-const path = require('path');
 
 const config = require('../../config/config');
+const certificateService = require('../certificateService/certificateService');
 const logService = require('../logService/logService');
-
-const ROOT = path.resolve(__dirname, '../..');
 
 function listen(server, port, scheme) {
     return new Promise((resolve, reject) => {
@@ -23,12 +20,11 @@ function startHTTPServer(app, port) {
     return listen(http.createServer(app), port, 'http');
 }
 
+// The certificate comes from the certificate service, which also replaces it while the server runs.
 async function startHTTPSServer(app, port) {
-    const [key, cert] = await Promise.all([
-        fs.promises.readFile(path.resolve(ROOT, config.httpsKeyFile), 'utf8'),
-        fs.promises.readFile(path.resolve(ROOT, config.httpsCertFile), 'utf8'),
-    ]);
-    return listen(https.createServer({ key, cert }, app), port, 'https');
+    const server = https.createServer(await certificateService.load(), app);
+    certificateService.attach(server);
+    return listen(server, port, 'https');
 }
 
 // Neither HTTP nor HTTPS is enabled: there is nothing to serve, so report and stop.

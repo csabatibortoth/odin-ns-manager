@@ -1,4 +1,4 @@
-// The standalone records are given as the documents of the database, and asked
+// The standalone records (the records of freya-ns-api without a zone) are given as the documents of the database, and asked
 // over a real DNS server on a local port; no database is needed.
 const assert = require('node:assert/strict');
 const { Resolver } = require('node:dns').promises;
@@ -18,7 +18,7 @@ const standalone = zoneService.buildStandalone([
     record('to-zone.home.test', 'CNAME', { target: 'www.example.com' }),
     record('*.dev.test', 'A', { target: '10.0.0.9' }),
     record('fixed.dev.test', 'TXT', { target: 'fixed' }),
-    record('printer', 'A', { target: '10.0.0.7' }),
+    record('printer', 'A', { target: '10.0.0.7' }, null),
     record('shadow.example.com', 'A', { target: '10.0.0.8' }),
     record('broken.home.test', 'A', { target: 5 }),
 ]);
@@ -54,7 +54,8 @@ test('answers the records of a name outside of the zones, with their TTL', async
         { address: '10.0.0.6', ttl: 120 },
     ]);
     assert.deepEqual(await resolver.resolve4('NAS.Home.Test'), ['10.0.0.5', '10.0.0.6']);
-    assert.deepEqual(await resolver.resolve4('printer'), ['10.0.0.7']);
+    // Without a TTL of its own: the default of the server
+    assert.deepEqual(await resolver.resolve4('printer', { ttl: true }), [{ address: '10.0.0.7', ttl: 3600 }]);
     assert.equal(sources.at(-1), 'records');
 });
 

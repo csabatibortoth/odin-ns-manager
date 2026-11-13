@@ -9,13 +9,13 @@ jobs:
     name: Check version and tag
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
       - name: Get package version
         shell: bash
         id: package_version
         run: |
           ver=$(jq .version package.json | sed -e "s/^\"//" -e "s/\"//")
-          echo "::set-output name=version::$ver"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
       - name: Compare package version and release tag
         if: steps.package_version.outputs.version != github.event.release.tag_name
         env:
@@ -30,10 +30,10 @@ jobs:
     needs: check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
-      - uses: actions/setup-node@v1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 12
+          node-version: 24
       - run: yarn install --frozen-lock-file
       - run: yarn lint
       - run: yarn tests
@@ -43,10 +43,10 @@ jobs:
     needs: [check, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
-      - uses: actions/setup-node@v1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 12
+          node-version: 24
           registry-url: https://registry.npmjs.org/
       - run: yarn install --frozen-lock-file
       - run: yarn publish

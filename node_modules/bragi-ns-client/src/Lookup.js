@@ -6,6 +6,9 @@ const AddressCache = require('./AddressCache');
 const TasksManager = require('./TasksManager');
 const ResolveTask  = require('./ResolveTask');
 
+// Loaded only when DNSSEC is asked for
+const loadSecureResolver = () => require('./dnssec/SecureResolver');
+
 /**
  * @param {*} value
  * @returns {boolean}
@@ -35,7 +38,36 @@ class Lookup {
         return 6;
     }
 
-    constructor() {
+    /**
+     * @param {Object} [options]
+     * @param {boolean|string} [options.dnssec] - `'validate'` (or `true`): the signatures of the answers are verified
+     * by this package. `'trust-ad'`: the validation done by the DNS server is trusted. Off by default.
+     * @param {boolean} [options.requireSecure] - with DNSSEC: fail for the hosts that are not protected by it
+     * @param {string[]} [options.servers] - with DNSSEC: DNS servers to ask, `dns.getServers()` by default
+     * @param {number} [options.timeout] - with DNSSEC: milliseconds to wait for a response of a server
+     * @param {number} [options.tries] - with DNSSEC: how many times to go through the list of servers
+     * @throws {Error}
+     */
+    constructor(options = {}) {
+        if (!isPlainObject(options)) {
+            throw new Error('options must be an object');
+        }
+
+        const {dnssec = false, ...resolverOptions} = options;
+
+        if (dnssec === false) {
+            if (Object.keys(resolverOptions).length > 0) {
+                throw new Error(`${Object.keys(resolverOptions).join(', ')} can be used only with the dnssec option`);
+            }
+
+            // dns.promises is used
+            this._resolver = undefined;
+        } else {
+            const SecureResolver = loadSecureResolver();
+
+            this._resolver = new SecureResolver({...resolverOptions, mode: dnssec === true ? 'validate' : dnssec});
+        }
+
         this._addressCache = new AddressCache();
         this._tasksManager = new TasksManager();
 
@@ -126,7 +158,10 @@ class Lookup {
         }
 
         if (options.all) {
-            return records.map(({address, family}) => ({address, family}));
+            // With DNSSEC every address tells if it is protected
+            return records.map(({address, family, secure}) =>
+                secure === undefined ? {address, family} : {address, family, secure}
+            );
         }
 
         if (records.length === 0) {
@@ -168,7 +203,7 @@ class Lookup {
             return runningTask.run();
         }
 
-        const task = new ResolveTask(hostname, ipVersion);
+        const task = new ResolveTask(hostname, ipVersion, this._resolver);
 
         this._tasksManager.add(key, task);
 

@@ -1,12 +1,11 @@
 const express = require('express');
 
-const { authenticate, requireRole, requireSelfOrAdmin } = require('../services/authService/authService');
+const { requireRole, requireSelfOrAdmin } = require('../services/authService/authService');
 const userService = require('../services/userService/userService');
 
+// Signing in is enforced for the whole API in app.js.
 const router = express.Router();
 const adminOnly = requireRole('admin');
-
-router.use(authenticate);
 
 router.get('/', adminOnly, async (req, res) => {
     res.json(await userService.listUsers(req.query));

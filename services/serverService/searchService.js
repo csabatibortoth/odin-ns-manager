@@ -5,11 +5,15 @@
 // - Answers are cached until their TTL runs out, failed lookups for a short time.
 // - Queries for the same name and type that arrive while a lookup is in flight
 //   wait for that lookup instead of sending their own.
+// - With the nsDnssec setting, the addresses (A and AAAA) are checked with the
+//   DNSSEC validation of bragi-ns-client before they are answered.
 const named = require('njord-ns-server');
-const { lookup } = require('bragi-ns-client');
+const { lookup, createLookup, DNSSEC_BOGUS } = require('bragi-ns-client');
 const config = require('../../config/config');
 
-const UPSTREAM_SETTINGS = ['nsUpstreamServers', 'nsUpstreamTimeout', 'nsUpstreamTries'];
+const UPSTREAM_SETTINGS = ['nsUpstreamServers', 'nsUpstreamTimeout', 'nsUpstreamTries', 'nsDnssec'];
+// The record types DNSSEC is checked for: the ones bragi-ns-client looks up
+const FAMILIES = { A: 4, AAAA: 6 };
 
 const createRecursor = () =>
     named.createRecursor({
@@ -19,6 +23,42 @@ const createRecursor = () =>
     });
 
 let recursor = createRecursor();
+
+// A lookup of bragi-ns-client that validates what the same upstream answers;
+// null when DNSSEC is off. It keeps the keys of the zones it has seen.
+const createSecureLookup = () =>
+    (config.nsDnssec === 'off'
+        ? null
+        : createLookup({ dnssec: config.nsDnssec, servers: recursor.servers(), timeout: config.nsUpstreamTimeout, tries: config.nsUpstreamTries }));
+
+let secureLookup = createSecureLookup();
+const dnssec = { secure: 0, insecure: 0, bogus: 0 }; // the checked lookups since the start
+
+// What DNSSEC says about the addresses of a name: { secure, addresses }, or
+// null when it can not tell (the name has none, the upstream did not answer).
+// Rejects when the answer is bogus: forged, or signed in a broken way.
+function validate(name, type) {
+    return new Promise((resolve, reject) => {
+        secureLookup(name, { all: true, family: FAMILIES[type] }, (error, addresses) => {
+            if (error) return error.code === DNSSEC_BOGUS ? reject(error) : resolve(null);
+            resolve({ secure: addresses.length > 0 && addresses.every((address) => address.secure), addresses: addresses.map((address) => address.address) });
+        });
+    });
+}
+
+// The answers of the upstream, after the check: a bogus answer is a failure,
+// and for a signed name nothing but the validated addresses is passed on.
+function checked(name, type, result, verdict) {
+    if (!verdict) return result;
+    dnssec[verdict.secure ? 'secure' : 'insecure']++;
+    if (!verdict.secure) return { ...result, secure: false };
+
+    const valid = new Set(verdict.addresses);
+    if (result.answers?.length && result.answers.every((answer) => valid.has(answer.record.target))) return { ...result, secure: true };
+    const ttl = result.answers?.reduce((min, answer) => Math.min(min, answer.ttl), Infinity) ?? Infinity;
+    const Record = type === 'A' ? named.ARecord : named.AAAARecord;
+    return { answers: verdict.addresses.map((address) => ({ record: new Record(address), ttl: Number.isFinite(ttl) ? ttl : 60 })), secure: true };
+}
 
 // What a failed lookup means for the response to our own client; anything
 // that is not listed is a failure of the server.
@@ -30,7 +70,7 @@ const RESPONSE_CODES = {
 };
 
 // Only definite answers of the upstream are worth remembering; timeouts are not.
-const CACHEABLE_ERRORS = new Set(['ENOTFOUND', 'ENODATA']);
+const CACHEABLE_ERRORS = new Set(['ENOTFOUND', 'ENODATA', DNSSEC_BOGUS]);
 
 const cache = new Map(); // key -> { answers, error, expires }
 const pending = new Map(); // key -> promise of a cache entry
@@ -48,18 +88,26 @@ function fetch(key, name, type) {
     let task = pending.get(key);
     if (task) return task;
 
-    task = recursor.lookup(name, type).then(
-        (answers) => {
-            const entry = { answers, expires: 0 };
-            remember(key, entry, answers.reduce((min, answer) => Math.min(min, answer.ttl), Infinity));
+    const asked = recursor.lookup(name, type).then((answers) => ({ answers }), (error) => ({ error }));
+    const verdict = secureLookup && FAMILIES[type] ? validate(name, type) : null;
+    task = Promise.all([asked, verdict])
+        .then(
+            ([result, known]) => checked(name, type, result, known),
+            (error) => {
+                dnssec.bogus++;
+                return { error };
+            }
+        )
+        .then((entry) => {
+            entry.expires = 0;
+            if (entry.error) {
+                if (CACHEABLE_ERRORS.has(entry.error.code)) remember(key, entry, config.nsNegativeCacheTtl);
+            } else {
+                remember(key, entry, entry.answers.reduce((min, answer) => Math.min(min, answer.ttl), Infinity));
+            }
             return entry;
-        },
-        (error) => {
-            const entry = { error, expires: 0 };
-            if (CACHEABLE_ERRORS.has(error.code)) remember(key, entry, config.nsNegativeCacheTtl);
-            return entry;
-        }
-    ).finally(() => pending.delete(key));
+        })
+        .finally(() => pending.delete(key));
 
     pending.set(key, task);
     return task;
@@ -108,6 +156,7 @@ function clearCache() {
 config.onChange((keys) => {
     if (keys.some((key) => UPSTREAM_SETTINGS.includes(key))) {
         recursor = createRecursor();
+        secureLookup = createSecureLookup();
         clearCache(); // what another upstream answered is not ours to keep
     }
     if (!config.nsCacheEnabled) clearCache();
@@ -120,6 +169,12 @@ module.exports = {
     clearCache,
     cacheSize: () => cache.size,
     upstreamServers: () => recursor.servers(),
+    // What DNSSEC said about a name that was looked up: true (signed and valid),
+    // false (not signed), or undefined when it was not checked or is not cached
+    secureOf: (name, type) => cache.get(`${type}:${name.toLowerCase()}`)?.secure,
+    // The code of the failure that is remembered for a name, if any
+    failureOf: (name, type) => cache.get(`${type}:${name.toLowerCase()}`)?.error?.code,
+    dnssecState: () => ({ mode: config.nsDnssec, ...dnssec }),
     // A cached replacement of dns.lookup, for the outgoing connections of this
     // process: http.get(url, { lookup }), net.connect({ host, port, lookup }), ...
     lookup,

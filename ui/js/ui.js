@@ -104,6 +104,7 @@ export function showError(err) {
 ///--- Tables
 
 // columns: [{ title, cell: (row) => text or element(s), class }]
+// On a narrow screen every row is shown as a block, with the titles next to the values: see theme.css
 export function table(columns, rows, empty = 'Nothing to show.') {
     if (!rows.length) return el('p', { class: 'empty', text: empty });
     return el(
@@ -113,7 +114,7 @@ export function table(columns, rows, empty = 'Nothing to show.') {
             'table',
             { class: 'grid' },
             el('thead', {}, el('tr', {}, columns.map((column) => el('th', { scope: 'col', class: column.class, text: column.title })))),
-            el('tbody', {}, rows.map((row) => el('tr', {}, columns.map((column) => el('td', { class: column.class }, column.cell(row))))))
+            el('tbody', {}, rows.map((row) => el('tr', {}, columns.map((column) => el('td', { class: column.class, 'data-label': column.title || null }, el('div', { class: 'cell' }, column.cell(row)))))))
         )
     );
 }
@@ -359,4 +360,58 @@ export function confirmDialog({ title, message, confirmLabel = 'Delete', onConfi
 // A failure of the form itself, shown at the field: throw fieldError('name', 'message')
 export function fieldError(name, message) {
     return Object.assign(new Error('Check the marked fields'), { details: { [name]: message } });
+}
+
+///--- Pieces of a page
+
+export const PAGE_SIZE = 20;
+
+export const link = (href, text) => el('a', { href, text });
+export const head = (title, ...actions) => el('div', { class: 'toolbar page-head' }, el('h2', { text: title }), el('span', { class: 'spacer' }), actions);
+export const options = (pairs) => pairs.map(([value, text]) => ({ value, text }));
+export const fact = (term, value) => el('span', {}, el('span', { text: `${term}: ` }), value);
+
+export function card(title, rows, ...actions) {
+    return el(
+        'section',
+        { class: 'card' },
+        el('h3', { text: title }),
+        el('dl', {}, rows.map(([term, value]) => [el('dt', { text: term }), el('dd', {}, value)])),
+        actions.filter(Boolean).length ? el('div', { class: 'actions' }, actions) : null
+    );
+}
+
+export function searchBox(placeholder, onSearch, value = '') {
+    const $search = control({ inputType: 'search', class: 'input grow', value: value || undefined }).attr({ placeholder, 'aria-label': placeholder });
+    $search.on('input', debounce(() => onSearch($search.val().trim())));
+    return $search;
+}
+
+export function filter(label, items, onChange, value = '') {
+    const $select = select(items, value);
+    $select.on('change', () => onChange($select.val()));
+    return el('label', {}, label, $select);
+}
+
+export const activeFilter = (onChange) => filter('State', options([['', 'All'], ['true', 'Active'], ['false', 'Inactive']]), onChange);
+
+// Loads a page of a list of the API into $list: a table and its pager.
+// state: { page, ... }; fetch(state) resolves to the list envelope; columns and empty as for table()
+export function listLoader($list, state, fetch, columns, empty) {
+    const load = async () => {
+        const result = await fetch(state);
+        if (result.page > result.pages && result.pages > 0) {
+            state.page = result.pages;
+            return load();
+        }
+        $list.empty().append(
+            table(typeof columns === 'function' ? columns() : columns, result.items, typeof empty === 'function' ? empty() : empty),
+            pager(result, (page) => {
+                state.page = page;
+                return load();
+            })
+        );
+        return result;
+    };
+    return load;
 }

@@ -28,4 +28,11 @@ module.exports = {
     User: require('./userModel'),
     Zone: require('./zoneModel'),
     Record: require('./recordModel'),
+    BlockList: require('./blockListModel'),
+    BlockEntry: require('./blockEntryModel'),
+    BlockRule: require('./blockRuleModel'),
+    BlockSettings: require('./blockSettingsModel'),
+    QueryLog: require('./queryLogModel'),
+    Client: require('./clientModel'),
+    Metric: require('./metricModel'),
 };

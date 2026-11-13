@@ -28,8 +28,9 @@ class ResolveTask {
     /**
      * @param {string} hostname
      * @param {number} ipVersion
+     * @param {{resolve4: Function, resolve6: Function}} [customResolver] - used instead of `dns.promises`
      */
-    constructor(hostname, ipVersion) {
+    constructor(hostname, ipVersion, customResolver = resolver) {
         assert(
             typeof hostname === 'string' && hostname.length > 0,
             `hostname must be not empty string, '${hostname}' has been provided.`
@@ -42,7 +43,7 @@ class ResolveTask {
 
         this._hostname  = hostname;
         this._ipVersion = ipVersion;
-        this._resolver  = ipVersion === ResolveTask.IPv4 ? resolver.resolve4 : resolver.resolve6;
+        this._resolver  = ipVersion === ResolveTask.IPv4 ? customResolver.resolve4 : customResolver.resolve6;
         this._promise   = undefined;
     }
 

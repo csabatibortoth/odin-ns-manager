@@ -1,6 +1,6 @@
 {
   "name": "bragi-ns-client",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "An implementation to speed up the nodejs `dns.lookup` method by avoiding thread pool and using resolve4/resolve6 with DNS TTL values",
   "main": "index.js",
   "engines": {
@@ -20,6 +20,7 @@
   },
   "keywords": [
     "dns",
+    "dnssec",
     "lookup",
     "resolve4",
     "resolve6",

@@ -7,11 +7,13 @@ const path = require('node:path');
 const { after, test } = require('node:test');
 
 const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'odin-config-')), 'settings.json');
-fs.writeFileSync(file, JSON.stringify({ nsCacheMaxEntries: 500, nsServerPort: 'fifty-three', secret: 'from-file', httpServerPort: 8080 }));
+fs.writeFileSync(file, JSON.stringify({ nsCacheMaxEntries: 500, nsServerPort: 'fifty-three', secret: 'from-file', httpServerPort: 8080, nsBlockMode: 'nxdomain' }));
 
 for (const name of Object.keys(process.env)) if (name.startsWith('ODIN_')) delete process.env[name];
 process.env.ODIN_SETTINGS_FILE = file;
 process.env.ODIN_HTTP_PORT = '9000';
+process.env.ODIN_QUERY_LOG_RETENTION_DAYS = '0';
+process.env.ODIN_NS_BLOCKING_ENABLED = 'false';
 
 const config = require('../config/config');
 const setting = (key) => config.describe().groups.flatMap((group) => group.settings).find((item) => item.key === key);
@@ -32,9 +34,21 @@ test('what is not valid in the settings file is left out', () => {
     assert.equal(config.secret, 'Test');
 });
 
+test('zero is a value of the environment', () => {
+    assert.equal(config.queryLogRetentionDays, 0);
+    assert.equal(setting('queryLogRetentionDays').source, 'environment');
+});
+
+test('the settings that moved to the database are kept apart, to be carried over', () => {
+    assert.deepEqual(config.legacy, { nsBlockMode: 'nxdomain', nsBlockingEnabled: false });
+    assert.equal(config.nsBlockMode, undefined);
+    assert.equal(setting('nsBlockMode'), undefined);
+});
+
 test('secrets are not described', () => {
     assert.equal('value' in setting('secret'), false);
     assert.equal('value' in setting('modelServerPwd'), false);
+    assert.equal('value' in setting('httpsKeyPassphrase'), false);
 });
 
 test('a live setting changes at once, and is saved', () => {

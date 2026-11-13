@@ -4,6 +4,8 @@
 
 :root {
     color-scheme: light dark;
+    --header-h: 56px;
+    --menu-w: 228px;
     --bg: #f4f6f8;
     --surface: #fff;
     --surface-2: #eef1f4;
@@ -94,81 +96,221 @@ h3 {
 }
 
 .header-container {
+    position: sticky;
+    top: 0;
+    z-index: 60;
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 6px 14px;
-    padding: 10px 24px;
+    gap: 12px;
+    height: var(--header-h);
+    padding: 0 20px;
     background: var(--accent);
     color: var(--accent-text);
 }
 
 #header_title_logo {
     display: block;
-    width: 36px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
+}
+
+#header_title_container {
+    min-width: 0;
 }
 
 #header_title_text {
     margin: 0;
+    overflow: hidden;
     font-size: 1.2rem;
     font-weight: 600;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
+/* Menu: the menu of Athena UI as a sidebar next to the content. Where the
+   screen is too narrow for that it is a drawer, opened with #menu_toggle. */
+
 #header_menu_container {
-    display: flex;
-    flex: 1;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 6px 16px;
+    position: fixed;
+    top: var(--header-h);
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+    width: var(--menu-w);
+    padding: 12px 10px 24px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+}
+
+/* Nobody is signed in: there is no menu */
+body:not(.signed-in) #header_menu_container {
+    display: none;
+}
+
+body.signed-in #container {
+    padding-left: var(--menu-w);
+}
+
+body.signed-in .header-container {
+    margin-left: calc(-1 * var(--menu-w));
 }
 
 .menu {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
+    flex-direction: column;
+    gap: 2px;
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
+.menu-group {
+    margin-top: 14px;
+    padding: 4px 12px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.menu-user {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.menu-user strong {
+    display: block;
+    overflow: hidden;
+    color: var(--text);
+    font-size: 0.9rem;
+    text-overflow: ellipsis;
+}
+
+.menu-user small {
+    font-size: 0.8rem;
+    font-weight: normal;
+}
+
 .header-menu .menu-item span {
     display: block;
-    padding: 6px 12px;
+    padding: 8px 12px;
     border-radius: 6px;
     cursor: pointer;
     user-select: none;
 }
 
 .header-menu .menu-item span:hover {
-    background: rgb(255 255 255 / 16%);
+    background: var(--surface-2);
 }
 
 .header-menu .menu-item.active span {
-    background: rgb(255 255 255 / 26%);
+    background: var(--accent);
+    color: var(--accent-text);
     font-weight: 600;
 }
 
-.header-menu .menu-item span:focus-visible {
-    outline-color: #fff;
-}
-
-#session_user {
+#menu_toggle {
+    display: none;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 42px;
+    height: 42px;
+    margin-left: -8px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: none;
     color: inherit;
-    font-size: 0.9rem;
-    opacity: 0.9;
-    text-decoration: none;
+    cursor: pointer;
 }
 
-a#session_user:hover {
-    opacity: 1;
-    text-decoration: underline;
+#menu_toggle:hover {
+    background: rgb(255 255 255 / 16%);
 }
 
-a#session_user:focus-visible {
+#menu_toggle:focus-visible {
     outline-color: #fff;
+}
+
+.menu-toggle-bar {
+    display: block;
+    width: 22px;
+    height: 2px;
+    border-radius: 2px;
+    background: currentcolor;
+    transition: transform 0.2s, opacity 0.2s;
+}
+
+/* The three bars become a cross while the menu is open */
+.menu-open .menu-toggle-bar:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.menu-open .menu-toggle-bar:nth-child(2) { opacity: 0; }
+.menu-open .menu-toggle-bar:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+#menu_backdrop {
+    display: none;
+}
+
+@media (max-width: 999px) {
+    body.signed-in #container {
+        padding-left: 0;
+    }
+
+    body.signed-in .header-container {
+        margin-left: 0;
+    }
+
+    body.signed-in #menu_toggle {
+        display: flex;
+    }
+
+    #header_menu_container {
+        width: min(86vw, 300px);
+        box-shadow: 4px 0 18px rgb(0 0 0 / 25%);
+        /* Hidden, not only moved away: its items are not reached with the keyboard while it is closed */
+        visibility: hidden;
+        transform: translateX(-100%);
+        transition: transform 0.2s ease, visibility 0.2s;
+    }
+
+    .menu-open #header_menu_container {
+        visibility: visible;
+        transform: none;
+    }
+
+    .menu-open #menu_backdrop {
+        display: block;
+        position: fixed;
+        inset: var(--header-h) 0 0 0;
+        z-index: 40;
+        background: rgb(0 0 0 / 45%);
+    }
+
+    /* The page behind the open menu stays where it is */
+    body.menu-open {
+        overflow: hidden;
+    }
+
+    /* Large enough for a finger */
+    .header-menu .menu-item span {
+        padding: 11px 12px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #header_menu_container,
+    .menu-toggle-bar {
+        transition: none;
+    }
 }
 
 .wrapper-container {
@@ -731,6 +873,11 @@ a#session_user:focus-visible {
     max-width: none;
 }
 
+/* The names of the environment variables are long, and have no place to break */
+.settings-group .grid td {
+    overflow-wrap: anywhere;
+}
+
 .banner {
     margin: 0 0 16px;
     padding: 10px 14px;
@@ -909,15 +1056,198 @@ a#session_user:focus-visible {
     color: var(--text);
 }
 
+/* New in the pages */
+
+.inline-field {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    color: var(--muted);
+}
+
+.inline-field .input {
+    width: auto;
+}
+
+.summary .spacer {
+    flex: 1;
+}
+
+.check {
+    margin-bottom: 8px;
+}
+
+.card.top .table-scroll {
+    border: 0;
+    box-shadow: none;
+}
+
+.card.top .grid th,
+.card.top .grid td {
+    padding: 5px 8px;
+}
+
+.card.top .empty {
+    padding: 14px;
+}
+
+.card .field-error {
+    display: block;
+    margin: 12px 0 0;
+    color: var(--danger);
+}
+
+input[type="file"].input {
+    padding: 5px;
+}
+
 @media (max-width: 640px) {
-    .header-container,
+    .header-container {
+        padding: 0 14px;
+    }
+
     .wrapper-container,
     #notices {
         padding-left: 14px;
         padding-right: 14px;
     }
 
-    #header_menu_container {
-        justify-content: flex-start;
+    .wrapper-container {
+        padding-top: 16px;
     }
+
+    h2 {
+        font-size: 1.25rem;
+    }
+
+    /* The filters share the width, instead of each taking a line of its own */
+    .toolbar label {
+        flex: 1 1 130px;
+    }
+
+    .toolbar label .input,
+    .toolbar .grow {
+        width: 100%;
+    }
+
+    .toolbar .grow {
+        flex-basis: 100%;
+    }
+
+    .tiles {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .tile {
+        padding: 10px 12px;
+    }
+
+    .tile-value {
+        font-size: 1.35rem;
+    }
+
+    .cards,
+    .cards.state,
+    .cards.wide {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .pager {
+        flex-wrap: wrap;
+        justify-content: space-between;
+    }
+
+    .modal {
+        padding: 12px 8px;
+    }
+
+    .modal-content {
+        padding: 16px 14px;
+    }
+
+    .form.inline {
+        max-width: none;
+    }
+
+    /* Tables: a row becomes a block, with the title of the column next to every
+       value, so nothing has to be scrolled sideways. The data tables of the
+       graphs are narrow, and stay tables. */
+    .table-scroll:not(.chart-data .table-scroll) {
+        overflow-x: visible;
+    }
+
+    .grid:not(.chart-data .grid),
+    .settings-group .grid {
+        display: block;
+        min-width: 0;
+    }
+
+    .grid:not(.chart-data .grid) thead {
+        display: none;
+    }
+
+    .grid:not(.chart-data .grid) tbody,
+    .grid:not(.chart-data .grid) tr {
+        display: block;
+    }
+
+    .grid:not(.chart-data .grid) tr {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .grid:not(.chart-data .grid) tr:last-child {
+        border-bottom: 0;
+    }
+
+    .grid:not(.chart-data .grid) td {
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+        max-width: none;
+        padding: 3px 0;
+        border: 0;
+        text-align: right;
+        overflow-wrap: anywhere;
+    }
+
+    .grid:not(.chart-data .grid) td > .cell {
+        min-width: 0;
+    }
+
+    .grid:not(.chart-data .grid) td[data-label]::before {
+        content: attr(data-label);
+        flex: none;
+        max-width: 45%;
+        color: var(--muted);
+        font-family: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 0.8rem;
+        text-align: left;
+    }
+
+    .grid:not(.chart-data .grid) td.actions {
+        justify-content: flex-end;
+        padding-top: 8px;
+        white-space: normal;
+    }
+
+    .grid td.actions > .cell {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+    }
+
+    .grid td.actions > .cell:empty {
+        display: none;
+    }
+
+    .grid td.actions .button {
+        margin-left: 0;
+        padding: 6px 12px;
+    }
+
 }

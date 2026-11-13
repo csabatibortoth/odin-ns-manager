@@ -1,43 +1,16 @@
 // The pages of the user interface. Each one renders into the element it is given.
 
-import { api, session, events, isAdmin, canWriteDns } from './api.js';
+import { api, session, events, isAdmin, canWriteDns, canMonitor } from './api.js';
 import {
-    el, control, button, select, table, pager, badge, activeBadge, notice, showError, debounce,
+    el, control, button, select, table, pager, badge, activeBadge, notice, showError,
     formDialog, inlineForm, confirmDialog, fieldError, formatDate, formatDuration, formatBytes,
+    PAGE_SIZE, link, head, options, card, searchBox, filter, activeFilter,
 } from './ui.js';
 import { lineChart, formatNumber } from './charts.js';
+import { topLists } from './monitoring.js';
 
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'PTR', 'SRV', 'TXT'];
 const LOOKUP_TYPES = [...RECORD_TYPES.slice(0, 6), 'SOA', 'SRV', 'TXT'];
-const PAGE_SIZE = 20;
-
-const link = (href, text) => el('a', { href, text });
-const head = (title, ...actions) => el('div', { class: 'toolbar page-head' }, el('h2', { text: title }), el('span', { class: 'spacer' }), actions);
-const options = (pairs) => pairs.map(([value, text]) => ({ value, text }));
-
-function card(title, rows, ...actions) {
-    return el(
-        'section',
-        { class: 'card' },
-        el('h3', { text: title }),
-        el('dl', {}, rows.map(([term, value]) => [el('dt', { text: term }), el('dd', {}, value)])),
-        actions.filter(Boolean).length ? el('div', { class: 'actions' }, actions) : null
-    );
-}
-
-function searchBox(placeholder, onSearch) {
-    const $search = control({ inputType: 'search', class: 'input grow' }).attr({ placeholder, 'aria-label': placeholder });
-    $search.on('input', debounce(() => onSearch($search.val().trim())));
-    return $search;
-}
-
-function filter(label, items, onChange) {
-    const $select = select(items, '');
-    $select.on('change', () => onChange($select.val()));
-    return el('label', {}, label, $select);
-}
-
-const activeFilter = (onChange) => filter('State', options([['', 'All'], ['true', 'Active'], ['false', 'Inactive']]), onChange);
 
 ///--- Dashboard
 
@@ -55,16 +28,19 @@ export function buildText(build) {
     return [build.number ? `build ${build.number}` : 'build', build.commit ? `(${build.commit})` : null].filter(Boolean).join(' ');
 }
 
-function blockingBadge(blocking) {
+export function blockingBadge(blocking) {
     if (!blocking.enabled) return badge('Off');
     if (blocking.failing) return badge('Database not readable', 'danger');
-    return blocking.names ? badge('On', 'ok') : badge('No lists', 'warn');
+    return blocking.names || blocking.rules ? badge('On', 'ok') : badge('Nothing to block', 'warn');
 }
+
+const DNSSEC_MODES = { off: 'Off', validate: 'Validated here', 'trust-ad': 'Trusting the upstream' };
 
 export async function dashboard($page) {
     const state = { range: '1h' };
     const $tiles = el('div', { class: 'tiles' });
     const $cards = el('div', { class: 'cards state' });
+    const $top = el('div');
 
     const charts = {
         queries: lineChart({
@@ -157,18 +133,29 @@ export async function dashboard($page) {
             ),
             card('Blocking', [
                 ['State', blockingBadge(s.blocking)],
-                ['Blocklists in use', s.blocking.lists],
-                ['Names blocked', formatNumber(s.blocking.names, 0)],
-                ['Names allowed', s.blocking.allowed],
-                ['Answer', s.blocking.mode === 'nxdomain' ? 'No such name' : el('span', { class: 'mono', text: '0.0.0.0' })],
+                ['Block lists in use', s.blocking.lists],
+                ['Names of the lists', formatNumber(s.blocking.names, 0)],
+                ['Rules set by hand', s.blocking.rules],
+                ['Answer', s.blocking.mode === 'NXDOMAIN' ? 'No such name' : el('span', { class: 'mono', text: '0.0.0.0' })],
+                ['Lists downloaded every', `${s.blocking.refresh} h`],
                 ['Loaded', formatDate(s.blocking.loadedAt)],
-            ]),
+            ], link('#/blocking', 'Blocking')),
+            card('Monitoring', [
+                ['Query log', !s.monitoring.enabled ? badge('Off') : s.monitoring.failing ? badge('Database not writable', 'danger') : s.monitoring.watching ? badge('On', 'ok') : badge('Not started', 'warn')],
+                ['Queries recorded', formatNumber(s.monitoring.recorded, 0)],
+                ['Waiting to be written', s.monitoring.waiting],
+                ...(s.monitoring.dropped ? [['Lost', s.monitoring.dropped]] : []),
+            ], canMonitor() ? link('#/queries', 'Query log') : null),
             card(
                 'Forwarding',
                 [
                     ['Upstream servers', el('span', { class: 'mono', text: s.upstream.join(', ') || 'of the system' })],
                     ['Cache', s.cache.enabled ? badge('On', 'ok') : badge('Off')],
                     ['Cached answers', `${s.cache.entries} of ${s.cache.max}`],
+                    ['DNSSEC', s.dnssec.mode === 'off' ? badge('Off') : badge(DNSSEC_MODES[s.dnssec.mode] || s.dnssec.mode, 'ok')],
+                    ...(s.dnssec.mode === 'off'
+                        ? []
+                        : [['Checked lookups', `${s.dnssec.secure} signed, ${s.dnssec.insecure} not signed, ${s.dnssec.bogus} refused`]]),
                 ],
                 isAdmin()
                     ? button('Clear cache', async () => {
@@ -185,6 +172,7 @@ export async function dashboard($page) {
         const [s, m] = await Promise.all([api('GET', '/service/status'), api('GET', '/service/metrics', { query: { range: state.range } })]);
         showMetrics(m);
         showStatus(s);
+        if (canMonitor()) topLists($top).catch(() => {});
     }
 
     const $range = select(options(RANGES), state.range);
@@ -198,6 +186,7 @@ export async function dashboard($page) {
         el('div', { class: 'toolbar' }, el('label', {}, 'Period', $range)),
         $tiles,
         el('div', { class: 'charts' }, Object.values(charts).map((chart) => chart.$el)),
+        $top,
         $cards
     );
     await load();
@@ -501,7 +490,10 @@ function recordDialog(zone, record, done) {
                     name: 'ttl', label: 'TTL (seconds)', type: 'number', value: record?.ttl ?? '', min: 0, blank: 'null',
                     placeholder: `${zone.ttl}`, hint: 'Leave it empty for the TTL of the zone.',
                 }
-                : { name: 'ttl', label: 'TTL (seconds)', type: 'number', value: record?.ttl ?? 3600, min: 0, required: true },
+                : {
+                    name: 'ttl', label: 'TTL (seconds)', type: 'number', value: record?.ttl ?? '', min: 0, blank: 'null',
+                    placeholder: '3600', hint: 'Leave it empty for the default of the server, 3600.',
+                },
             { name: 'active', label: 'Active: answered by the DNS server', type: 'checkbox', value: record ? record.active : true },
         ],
         onSubmit: async (values) => {
@@ -550,7 +542,7 @@ export async function records($page) {
                     { title: 'Name', cell: (record) => el('span', { class: 'mono', text: record.name }) },
                     { title: 'Type', cell: (record) => badge(record.type) },
                     { title: 'Value', class: 'value', cell: (record) => recordValue(record) },
-                    { title: 'TTL', class: 'num', cell: (record) => record.ttl },
+                    { title: 'TTL', class: 'num', cell: (record) => record.ttl ?? el('span', { class: 'muted', title: 'The default of the server', text: '3600*' }) },
                     { title: 'State', cell: (record) => activeBadge(record.active) },
                     { title: 'Changed', cell: (record) => formatDate(record.updatedAt) },
                     ...(write
@@ -583,7 +575,7 @@ export async function records($page) {
         head('Records', write ? button('Add record', () => recordDialog(null, null, load), 'primary') : null),
         el('p', {
             class: 'muted',
-            text: 'Standalone records: single names the server answers itself, without a zone around them. The other record types of such a name are not forwarded. The names inside a zone are managed in their zone.',
+            text: 'Standalone records: single names the server answers itself, without a zone around them. The other record types of such a name are not forwarded. A name inside one of the zones is answered by its zone: add its records there.',
         }),
         el(
             'div',
@@ -606,167 +598,13 @@ export async function records($page) {
     await load();
 }
 
-///--- Blocklists
-
-const BLOCKLIST_EXAMPLE = 'https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts';
-
-export async function blocklists($page) {
-    const admin = isAdmin();
-    const $state = el('div', { class: 'summary' });
-    const $lists = el('div');
-    const $allowed = el('div');
-    const fact = (term, value) => el('span', {}, el('span', { text: `${term}: ` }), value);
-
-    const listState = (list) => {
-        if (!list.active) return badge('Inactive', 'warn');
-        if (list.lastError) return el('span', { title: list.lastError }, badge(list.fetchedAt ? 'Download failed' : 'Not downloaded', 'danger'));
-        return list.fetchedAt ? badge('Active', 'ok') : badge('Waiting', 'warn');
-    };
-
-    const load = async () => {
-        const [lists, allowed] = await Promise.all([api('GET', '/blocklists'), api('GET', '/blocklists/allowed')]);
-        const state = lists.state;
-
-        $state.empty().append(
-            fact('Blocking', blockingBadge(state)),
-            fact('Names blocked', formatNumber(state.names, 0)),
-            fact('Answer for a blocked name', state.mode === 'nxdomain' ? 'no such name' : 'the address 0.0.0.0'),
-            admin ? link('#/settings', 'Change in the settings') : null
-        );
-        $lists.empty().append(
-            table(
-                [
-                    {
-                        title: 'List',
-                        cell: (list) => [
-                            el('div', { text: list.name }),
-                            el('div', { class: 'muted small break', text: list.url }),
-                            list.lastError ? el('div', { class: 'field-error small', text: list.lastError }) : null,
-                        ],
-                    },
-                    { title: 'Names', class: 'num', cell: (list) => formatNumber(list.entries, 0) },
-                    { title: 'Subdomains', cell: (list) => (list.subdomains ? 'Blocked too' : '–') },
-                    { title: 'State', cell: listState },
-                    { title: 'Downloaded', cell: (list) => formatDate(list.fetchedAt) },
-                    ...(admin
-                        ? [{
-                            title: '',
-                            class: 'actions',
-                            cell: (list) => [
-                                button('Update', async () => {
-                                    const updated = await api('POST', `/blocklists/${list.id}/update`);
-                                    if (updated.lastError) notice('error', `${updated.name} could not be downloaded: ${updated.lastError}`);
-                                    else notice('ok', `${updated.name} is downloaded: ${formatNumber(updated.entries, 0)} names`);
-                                    await load();
-                                }, 'small'),
-                                button('Edit', () => blocklistDialog(list, load), 'small'),
-                                button('Delete', () => deleteBlocklist(list, load), 'small danger'),
-                            ],
-                        }]
-                        : []),
-                ],
-                lists.items,
-                'There are no blocklists yet.'
-            )
-        );
-        $allowed.empty().append(
-            table(
-                [
-                    { title: 'Name', cell: (entry) => el('span', { class: 'mono', text: entry.name }) },
-                    { title: 'Note', cell: (entry) => entry.note || '–' },
-                    { title: 'Added', cell: (entry) => formatDate(entry.createdAt) },
-                    ...(admin
-                        ? [{
-                            title: '',
-                            class: 'actions',
-                            cell: (entry) => button('Remove', async () => {
-                                await api('DELETE', `/blocklists/allowed/${entry.id}`);
-                                notice('ok', `${entry.name} is no longer allowed`);
-                                await load();
-                            }, 'small danger'),
-                        }]
-                        : []),
-                ],
-                allowed.items,
-                'No name is allowed in spite of the lists.'
-            )
-        );
-    };
-
-    $page.append(
-        head('Blocklists', admin ? button('Add blocklist', () => blocklistDialog(null, load), 'primary') : null),
-        el('p', {
-            class: 'muted',
-            text: 'Lists of names the server does not look up: advertising, trackers, malware. A list is a hosts file or a list of names at an address, and is downloaded again regularly. The own zones and the standalone records come before the lists.',
-        }),
-        $state,
-        $lists,
-        el('div', { class: 'toolbar page-head section-head' }, el('h3', { text: 'Allowed names' }), el('span', { class: 'spacer' }), admin ? button('Allow a name', () => allowedDialog(load)) : null),
-        el('p', { class: 'muted', text: 'These names, and the names below them, are looked up even when a list blocks them.' }),
-        $allowed
-    );
-    await load();
-}
-
-function blocklistDialog(list, done) {
-    formDialog({
-        title: list ? `Edit blocklist ${list.name}` : 'Add blocklist',
-        intro: list ? null : 'The list is downloaded when it is saved, which can take a moment.',
-        fields: [
-            { name: 'name', label: 'Name', value: list?.name, required: true, maxlength: 100, placeholder: 'StevenBlack hosts' },
-            {
-                name: 'url', label: 'Address of the list', type: 'url', value: list?.url, required: true, placeholder: BLOCKLIST_EXAMPLE,
-                hint: 'A hosts file ("0.0.0.0 ads.example.com") or a list of names, over http or https.',
-            },
-            {
-                name: 'subdomains', label: 'Also block the names below the names of the list', type: 'checkbox', value: list ? list.subdomains : false,
-                hint: 'Lists of hosts name every name themselves, and do not need it.',
-            },
-            { name: 'active', label: 'Active: used by the DNS server', type: 'checkbox', value: list ? list.active : true },
-        ],
-        onSubmit: async (values) => {
-            const saved = list ? await api('PATCH', `/blocklists/${list.id}`, { body: values }) : await api('POST', '/blocklists', { body: values });
-            if (saved.lastError) notice('error', `${saved.name} is saved, but could not be downloaded: ${saved.lastError}`);
-            else notice('ok', `${saved.name} is saved: ${formatNumber(saved.entries, 0)} names`);
-            await done();
-        },
-    });
-}
-
-function deleteBlocklist(list, done) {
-    confirmDialog({
-        title: `Delete blocklist ${list.name}?`,
-        message: 'The names of this list are looked up again, unless another list blocks them.',
-        onConfirm: async () => {
-            await api('DELETE', `/blocklists/${list.id}`);
-            notice('ok', `Blocklist ${list.name} is deleted`);
-            await done();
-        },
-    });
-}
-
-function allowedDialog(done) {
-    formDialog({
-        title: 'Allow a name',
-        fields: [
-            { name: 'name', label: 'Name', required: true, placeholder: 'example.com', hint: 'The name and every name below it.' },
-            { name: 'note', label: 'Note', maxlength: 200, placeholder: 'Why it is allowed' },
-        ],
-        submitLabel: 'Allow',
-        onSubmit: async (values) => {
-            const entry = await api('POST', '/blocklists/allowed', { body: values });
-            notice('ok', `${entry.name} is allowed`);
-            await done();
-        },
-    });
-}
-
 ///--- Lookup
 
 const LOOKUP_ERRORS = {
     ENOTFOUND: 'No such name',
     ENODATA: 'The name has no records of this type',
     ESERVFAIL: 'Server failure',
+    EDNSSEC_BOGUS: 'Refused by DNSSEC',
     EREFUSED: 'Refused',
     ETIMEOUT: 'No answer in time',
     ENOTIMP: 'Not implemented',
@@ -796,8 +634,12 @@ export function lookup($page) {
                 : badge(`${r.answers.length} record(s)`, 'ok');
             $result.empty().append(
                 card(`${r.type} ${r.name}`, [
-                    ['Answered from', { zone: `the zone ${r.zone}`, records: 'the standalone records', blocklist: 'the blocklists: the name is blocked' }[r.source] || 'the upstream DNS servers'],
+                    ['Answered from', {
+                        zone: `the zone ${r.zone}`, records: 'the standalone records',
+                        blocklist: 'the block lists: the name is blocked', blockrule: 'a block rule: the name is blocked',
+                    }[r.source] || 'the upstream DNS servers'],
                     ['Result', outcome],
+                    ...(r.dnssec ? [['DNSSEC', { secure: badge('Signed and valid', 'ok'), insecure: badge('Not signed'), bogus: badge('Refused: the signatures are not valid', 'danger') }[r.dnssec]]] : []),
                     ['Time', `${r.ms} ms`],
                 ]).append(r.answers.length ? el('ul', { class: 'mono' }, r.answers.map((answer) => el('li', { text: answer }))) : null)
             );
@@ -895,7 +737,7 @@ export async function users($page) {
         $list,
         el('p', {
             class: 'muted',
-            text: `Admins manage the users and the service. Zones and records may be changed by: ${(session.info?.dnsWriteRoles || ['admin']).join(', ')}.`,
+            text: `Admins manage the users and the service. Zones, records and the blocking may be changed by: ${(session.info?.dnsWriteRoles || ['admin']).join(', ')}. The query log and the clients may be read by: ${(session.info?.monitoringRoles || ['admin']).join(', ')}.`,
         })
     );
     await load();
