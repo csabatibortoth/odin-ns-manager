@@ -1,75 +1,53 @@
-// Blocks the names of the blocklists: lists such as
-// https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts, which are
-// downloaded from their address, kept in MongoDB, and answered from memory.
+// Blocks the names of the blocking of freya-ns-api: the block lists, such as
+// https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts, which the
+// API downloads and keeps in MongoDB, and the block rules that are set by hand.
+// The queries are answered from memory.
 //
 // - A blocked name is not looked up at the upstream. It is answered with the
-//   address 0.0.0.0 (and ::), or with "no such name": the nsBlockMode setting.
-// - The own zones and standalone records come first; an allowed name is never blocked.
+//   address 0.0.0.0 (and ::), or with "no such name": the mode of the blocking.
+// - The own zones and standalone records come first.
+// - A name is decided the way `check` of freya-ns-api decides it: the rule of
+//   the name itself, or else of the nearest domain above it that includes its
+//   subdomains; without a rule, the active block lists that hold the name.
 // - A list is downloaded again every nsBlocklistRefresh hours. When that
 //   fails, the names of the last download stay in use.
-const net = require('net');
-const zlib = require('zlib');
-const { promisify } = require('util');
 const named = require('njord-ns-server');
 const config = require('../../config/config');
 
-const gzip = promisify(zlib.gzip);
-const gunzip = promisify(zlib.gunzip);
-
 const SYNC_SECONDS = 15; // between two looks at the database
 const RETRY_MINUTES = 15; // after a download that failed
-const DOWNLOAD_TIMEOUT = 60000;
-const MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024;
 const BLOCKED_TTL = 300;
-
-// What a hosts file says about the machine itself, not about what to block
-const LOCAL_NAMES = new Set(['localhost', 'localhost.localdomain', 'local', 'broadcasthost', 'ip6-localhost', 'ip6-loopback', '0.0.0.0']);
-const NAME = /^(?=.{1,253}$)([a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?\.)+[a-z0-9-]{2,63}$/;
 
 const cleanName = (name) => name.toLowerCase().replace(/\.$/, '');
 const parentOf = (name) => name.slice(name.indexOf('.') + 1);
 
-let blocked = new Set(); // the names of the lists
-let blockedBelow = new Set(); // the names whose subdomains are blocked as well
-let allowed = new Set(); // these and the names below them are never blocked
+let settings = { enabled: true, mode: 'NULL_IP' };
+let blocked = new Set(); // the names of the active lists
+let rules = new Map(); // domain -> { block, below }: block or allow, and whether the names below it as well
 let listCount = 0;
 
-///--- Lists
+///--- The decision
 
-// The names of a list, without duplicates. Understands the lines of a hosts
-// file ("0.0.0.0 ads.example.com"), plain names, and the "||ads.example.com^"
-// of the filter lists of ad blockers. Comments start with # or !.
-function parseList(text) {
-    const names = new Set();
-    for (const raw of text.split(/\r?\n/)) {
-        const line = raw.replace(/#.*$/, '').trim();
-        if (!line || line.startsWith('!') || line.startsWith('[')) continue;
-
-        let words = line.split(/\s+/);
-        if (net.isIP(words[0])) words = words.slice(1);
-        else if (words.length > 1) continue; // not a line of names
-        for (const word of words) {
-            const name = cleanName(word.replace(/^\|\|/, '').replace(/\^$/, ''));
-            if (NAME.test(name) && !LOCAL_NAMES.has(name)) names.add(name);
-        }
-    }
-    return [...names];
-}
-
-// Is the name one of these, or below one of them?
-function within(set, name) {
+// The rule that decides a name: its own, or the nearest one above it that includes its subdomains
+function ruleOf(name) {
+    if (!rules.size) return null;
     for (let rest = name; ; rest = parentOf(rest)) {
-        if (set.has(rest)) return true;
-        if (!rest.includes('.')) return false;
+        const rule = rules.get(rest);
+        if (rule && (rest === name || rule.below)) return rule;
+        if (!rest.includes('.')) return null;
     }
 }
 
-function isBlocked(name) {
-    if (!config.nsBlockingEnabled || !blocked.size) return false;
+// Why a name is blocked: 'rule' or 'list'; null when it is not
+function reason(name) {
+    if (!settings.enabled) return null;
     name = cleanName(name);
-    if (!blocked.has(name) && !(blockedBelow.size && within(blockedBelow, name))) return false;
-    return !(allowed.size && within(allowed, name));
+    const rule = ruleOf(name);
+    if (rule) return rule.block ? 'rule' : null;
+    return blocked.has(name) ? 'list' : null;
 }
+
+const isBlocked = (name) => reason(name) !== null;
 
 // Answers a query of the server when its name is blocked. Returns false when
 // it is not, and the query is left for the upstream lookup.
@@ -78,124 +56,90 @@ function resolve(query) {
     if (!isBlocked(name)) return false;
 
     query._flags.ra = true;
-    if (config.nsBlockMode === 'nxdomain') query.setError('enoname');
+    if (settings.mode === 'NXDOMAIN') query.setError('enoname');
     else if (query.type() === 'A') query.addAnswer(name, new named.ARecord('0.0.0.0'), BLOCKED_TTL);
     else if (query.type() === 'AAAA') query.addAnswer(name, new named.AAAARecord('::'), BLOCKED_TTL);
     // The other types get an empty answer
     return true;
 }
 
-// lists: [{ names: [...], subdomains }], allowedNames: [...]
-function replace(lists, allowedNames = []) {
-    const nextBlocked = new Set();
-    const nextBelow = new Set();
-    for (const list of lists) {
-        for (const name of list.names) {
-            nextBlocked.add(name);
-            if (list.subdomains) nextBelow.add(name);
-        }
+// next: { settings?: { enabled, mode }, names?: iterable of the names of the lists, lists?: their number,
+//         rules?: [{ domain, action, includeSubdomains }] } - what is left out stays as it is
+function replace(next = {}) {
+    if (next.settings) settings = { enabled: next.settings.enabled !== false, mode: next.settings.mode === 'NXDOMAIN' ? 'NXDOMAIN' : 'NULL_IP' };
+    if (next.names) blocked = next.names instanceof Set ? next.names : new Set(next.names);
+    if (next.lists !== undefined) listCount = next.lists;
+    if (next.rules) {
+        rules = new Map(next.rules.map((rule) => [rule.domain, { block: rule.action === 'block', below: Boolean(rule.includeSubdomains) }]));
     }
-    blocked = nextBlocked;
-    blockedBelow = nextBelow;
-    allowed = new Set(allowedNames);
-    listCount = lists.length;
 }
 
 ///--- The database and the downloads
 
-// Required late: the lookups above have to work without a database.
-const models = () => require('../../model/mongoDB/blocklistModel');
+// Required late: freya-ns-api reads its settings when it is first loaded (see
+// apiService), and the lookups above have to work without a database.
 const logs = () => require('../apiService/apiService').logService;
+const models = () => {
+    require('../apiService/apiService');
+    return require('freya-ns-api/model/mongoDB/manager');
+};
+const listService = () => {
+    require('../apiService/apiService');
+    return require('freya-ns-api/services/blockingService/blockListService');
+};
 
-let stamp = null;
+let listStamp = null;
 let running = null;
 let queued = false;
 let timer = null;
 let failing = false;
 let loadedAt = null;
-const downloading = new Set(); // ids of the lists that are being downloaded
-
-async function fetchText(url) {
-    const response = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT), redirect: 'follow', headers: { Accept: 'text/plain, */*' } });
-    if (!response.ok) throw new Error(`The server of the list answered ${response.status}`);
-
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of response.body) {
-        size += chunk.length;
-        if (size > MAX_DOWNLOAD_BYTES) throw new Error('The list is larger than 64 MB');
-        chunks.push(chunk);
-    }
-    return Buffer.concat(chunks).toString('utf8');
-}
-
-// Downloads a list, and saves its names. A failure is saved with the list,
-// which keeps the names it had. Returns the list.
-async function download(list) {
-    const id = String(list._id);
-    if (downloading.has(id)) return list;
-    downloading.add(id);
-    try {
-        list.checkedAt = new Date();
-        try {
-            const text = await fetchText(list.url);
-            if (/^\s*<(!doctype|html)/i.test(text)) throw new Error('The address answers with a web page, not with a list');
-            const names = parseList(text);
-            if (!names.length) throw new Error('No names are found in the list');
-
-            list.content = await gzip(names.join('\n'));
-            list.entries = names.length;
-            list.fetchedAt = list.checkedAt;
-            list.lastError = '';
-            logs().addInfoLogBasicInfoEntry('Blocklist downloaded: ', list.name, ', ', names.length, ' names');
-        } catch (err) {
-            list.lastError = String(err.cause?.message || err.message || err).slice(0, 300);
-            logs().addErrorLogErrorEntry('Blocklist could not be downloaded: ', list.name, ' - ', list.lastError);
-        }
-        await list.save();
-        return list;
-    } finally {
-        downloading.delete(id);
-    }
-}
+let downloading = false;
 
 async function load() {
-    const { Blocklist, AllowedName } = models();
-    const [lists, allowedNames] = await Promise.all([
-        Blocklist.find({ active: true }).select('subdomains fetchedAt checkedAt').lean(),
-        AllowedName.find().select('name').lean(),
+    const { BlockList, BlockEntry, BlockRule, BlockSettings } = models();
+    const [stored, lists, storedRules] = await Promise.all([
+        BlockSettings.findById(BlockSettings.ID).lean(),
+        BlockList.find({ active: true }).select('status refreshedAt entryCount updatedAt').lean(),
+        BlockRule.find({ active: true }).select('domain action includeSubdomains').lean(),
     ]);
 
-    // The names are read again only when a list or an allowed name differs
-    const next = [
-        ...lists.map((list) => `${list._id}:${list.subdomains}:${list.fetchedAt?.getTime()}`),
-        ...allowedNames.map((entry) => `allow:${entry.name}`),
-    ].sort().join();
-    if (next !== stamp) {
-        const stored = await Blocklist.find({ active: true, fetchedAt: { $ne: null } }).select('+content subdomains').lean();
-        const built = [];
-        for (const list of stored) {
-            // lean() gives the buffer as a Binary of the driver
-            const buffer = Buffer.isBuffer(list.content) ? list.content : list.content?.buffer;
-            if (buffer?.length) built.push({ subdomains: list.subdomains, names: (await gunzip(buffer)).toString('utf8').split('\n') });
+    // The settings and the rules are few: they are taken as they are
+    replace({ settings: stored ?? { enabled: true, mode: 'NULL_IP' }, rules: storedRules });
+
+    // The names are read again only when a list was downloaded, added or removed
+    const stamp = lists.map((list) => `${list._id}:${list.refreshedAt?.getTime()}:${list.entryCount}`).sort().join();
+    if (stamp !== listStamp) {
+        const names = new Set();
+        if (lists.length) {
+            const entries = BlockEntry.find({ list: { $in: lists.map((list) => list._id) } }).select('domain -_id').lean().cursor();
+            for await (const entry of entries) names.add(entry.domain);
         }
-        replace(built, allowedNames.map((entry) => entry.name));
-        stamp = next;
+        replace({ names, lists: lists.length });
+        listStamp = stamp;
         loadedAt = new Date();
-        logs().addInfoLogBasicInfoEntry('Blocklists loaded: ', built.length, ', names: ', blocked.size, ', allowed: ', allowed.size);
+        logs().addInfoLogBasicInfoEntry('Block lists loaded: ', lists.length, ', names: ', names.size, ', rules: ', rules.size);
     }
 
-    // The lists that are due, one at a time
+    // The lists that are due, one at a time. The API downloads a list itself
+    // when it is added; asking for it here waits for that download.
+    if (downloading) return;
     const now = Date.now();
     const due = lists.find((list) => {
-        if (downloading.has(String(list._id))) return false;
-        const age = list.fetchedAt ? now - list.fetchedAt.getTime() : Infinity;
-        const waited = list.checkedAt ? now - list.checkedAt.getTime() : Infinity;
+        if (list.status === 'pending') return true;
+        const age = list.refreshedAt ? now - list.refreshedAt.getTime() : Infinity;
+        const waited = list.updatedAt ? now - list.updatedAt.getTime() : Infinity;
         return age > config.nsBlocklistRefresh * 3600000 && waited > RETRY_MINUTES * 60000;
     });
     if (due) {
-        const list = await Blocklist.findById(due._id);
-        if (list) download(list).then(sync, () => {});
+        downloading = true;
+        listService()
+            .refreshList(String(due._id))
+            .catch(() => {}) // deleted meanwhile; a failed download is recorded with the list
+            .finally(() => {
+                downloading = false;
+                sync();
+            });
     }
 }
 
@@ -212,7 +156,7 @@ function sync() {
             failing = false;
         })
         .catch((err) => {
-            if (!failing) logs().addErrorLogErrorEntry('Blocklists could not be loaded: ', err.stack || err);
+            if (!failing) logs().addErrorLogErrorEntry('Block lists could not be loaded: ', err.stack || err);
             failing = true;
         })
         .finally(() => {
@@ -238,20 +182,19 @@ function stop() {
 }
 
 module.exports = {
-    parseList,
     isBlocked,
+    reason,
     resolve,
     replace,
-    download,
     sync,
     start,
     stop,
     state: () => ({
-        enabled: config.nsBlockingEnabled,
-        mode: config.nsBlockMode,
+        enabled: settings.enabled,
+        mode: settings.mode,
         lists: listCount,
         names: blocked.size,
-        allowed: allowed.size,
+        rules: rules.size,
         watching: timer !== null,
         failing,
         loadedAt,

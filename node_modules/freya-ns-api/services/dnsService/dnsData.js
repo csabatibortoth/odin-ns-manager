@@ -116,6 +116,16 @@ function parseOwnerName(value, zoneName) {
     return name;
 }
 
+// A fully qualified domain name, for what is not tied to a zone. "*" may be the first label when `wildcard` is set.
+function parseDomainName(value, { field = 'name', wildcard = false } = {}) {
+    const name = cleanName(value);
+    const bare = wildcard && typeof name === 'string' && name.startsWith('*.') ? name.slice(2) : name;
+    if (!bare || !validators.nsDomain(bare)) {
+        throw invalid({ [field]: `${field} must be a fully qualified domain name, e.g. www.example.com` });
+    }
+    return name;
+}
+
 // null: no TTL of its own.
 function parseTtl(value, field = 'ttl') {
     if (value === undefined || value === null) return null;
@@ -138,6 +148,7 @@ module.exports = {
     parseSoa,
     parseZoneName,
     parseOwnerName,
+    parseDomainName,
     parseTtl,
     parseActive,
 };

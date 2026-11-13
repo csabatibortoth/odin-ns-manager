@@ -1,6 +1,6 @@
 // Answers the queries for the names of our own zones: the zones and records
 // that are managed through the API (freya-ns-api) and stored in MongoDB. The
-// standalone records, which belong to no zone, are answered here as well.
+// standalone records of the API, which belong to no zone, are answered here as well.
 //
 // - The active zones are kept in memory, so a query never waits for the database.
 // - Every change raises the serial of its zone; a zone is read again when its
@@ -176,9 +176,11 @@ async function resolve(query) {
 
 // Required late: freya-ns-api reads its settings when it is first loaded, and
 // the lookups above have to work without a database.
-const models = () => require('freya-ns-api/model/mongoDB/manager');
-const standaloneModel = () => require('../../model/mongoDB/standaloneRecordModel');
 const logs = () => require('../apiService/apiService').logService;
+const models = () => {
+    require('../apiService/apiService');
+    return require('freya-ns-api/model/mongoDB/manager');
+};
 
 let running = null;
 let queued = false;
@@ -212,8 +214,9 @@ async function load() {
         }
     }
 
-    // The standalone records are few: they are read whole, and built again when one of them differs
-    const loose = await standaloneModel().find({ active: true }).lean();
+    // The standalone records are the records without a zone. They are few: they
+    // are read whole, and built again when one of them differs
+    const loose = await Record.find({ zone: null, active: true }).lean();
     const stamp = loose.map((record) => `${record._id}:${record.updatedAt?.getTime()}`).sort().join();
     const standaloneChanged = stamp !== standaloneStamp;
     if (standaloneChanged) {

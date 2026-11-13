@@ -4,6 +4,7 @@ const named = require('njord-ns-server');
 const config = require('./config/config');
 const { logService, connectDb, startApi, stopApi } = require('./services/apiService/apiService');
 const blockService = require('./services/serverService/blockService');
+const queryLogService = require('./services/serverService/queryLogService');
 const searchService = require('./services/serverService/searchService');
 const statusService = require('./services/serverService/statusService');
 const zoneService = require('./services/serverService/zoneService');
@@ -26,15 +27,18 @@ nameServer.on('query', async (query) => {
 
     const started = performance.now();
     try {
-        // Our own zones and standalone records first, then the blocklists;
+        // Our own zones and standalone records first, then the blocking;
         // every other name is looked up at the upstream
         let answered = await zoneService.resolve(query);
         if (!answered && blockService.resolve(query)) answered = 'blocked';
         if (!answered) await searchService.resolve(query);
         nameServer.send(query);
-        statusService.countQuery(answered || 'forwarded', performance.now() - started);
+        const ms = performance.now() - started;
+        statusService.countQuery(answered || 'forwarded', ms);
+        queryLogService.note(query, { blocked: answered === 'blocked', ms });
     } catch (err) {
         statusService.countQuery('failed');
+        queryLogService.note(query, { failed: true });
         logService.addErrorLogErrorEntry(`DNS Query failed: (${query.type()}) ${query.name()} - `, err.stack || err);
     }
 });
@@ -66,14 +70,12 @@ async function main() {
     // The DNS server keeps running, as a forwarder, when the database can not
     // be reached or the management API can not start
     let dbConnected = false;
-    if (config.nsZonesEnabled || config.nsBlockingEnabled || config.apiEnabled) {
-        try {
-            await connectDb();
-            dbConnected = true;
-        } catch (err) {
-            console.error('Database is not reachable, no zones are served and the management API is not started:', err.message);
-            logService.addErrorLogErrorEntry('Database connection failed: ', err.stack || err);
-        }
+    try {
+        await connectDb();
+        dbConnected = true;
+    } catch (err) {
+        console.error('Database is not reachable, no zones are served and the management API is not started:', err.message);
+        logService.addErrorLogErrorEntry('Database connection failed: ', err.stack || err);
     }
 
     if (dbConnected && config.nsZonesEnabled) {
@@ -81,12 +83,18 @@ async function main() {
     }
 
     if (dbConnected) {
-        console.log('Blocking %d name(s) of the blocklists', await blockService.start());
+        console.log('Blocking %d name(s) of the block lists', await blockService.start());
+        queryLogService.start();
     }
 
     if (dbConnected && config.apiEnabled) {
         try {
-            await startApi({ onDnsChange: zoneService.refresh });
+            await startApi({
+                onDnsChange: () => {
+                    zoneService.refresh();
+                    blockService.sync();
+                },
+            });
             if (config.uiEnabled) console.log('User interface is at the address above');
         } catch (err) {
             console.error('Management API failed to start:', err.message);
@@ -103,6 +111,7 @@ async function main() {
         zoneService.stop();
         blockService.stop();
         statusService.stop();
+        await queryLogService.stop().catch(() => {});
         await stopApi().catch(() => {});
         process.exit(0);
     };

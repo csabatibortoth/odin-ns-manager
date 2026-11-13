@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.2.2** - see the [release notes](#release-notes).
+Current version: **2.3.0** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -14,8 +14,8 @@ It brings four packages together:
 | Package | Role in the manager |
 | --- | --- |
 | [njord-ns-server](https://github.com/csabatibortoth/njord-ns-server) | The DNS server: answers queries over UDP and TCP, and looks up unknown names at upstream DNS servers. Its record classes and validators are what the zones are built of |
-| [freya-ns-api](https://github.com/csabatibortoth/freya-ns-api) | The management API: zones and records, users, authentication, logging and the MongoDB connection |
-| [bragi-ns-client](https://github.com/csabatibortoth/bragi-ns-client) | The DNS client: a cached replacement of `dns.lookup` for outgoing connections |
+| [freya-ns-api](https://github.com/csabatibortoth/freya-ns-api) | The management API: zones and records, standalone records, blocking, monitoring, export and import, the HTTPS certificate, users, authentication, logging and the MongoDB connection |
+| [bragi-ns-client](https://github.com/csabatibortoth/bragi-ns-client) | The DNS client: a cached replacement of `dns.lookup` for outgoing connections, and the DNSSEC validation of the forwarded addresses |
 | [athena-ui-js](https://github.com/csabatibortoth/athena-ui) | The user interface: page layout, menu, login form and dialogs |
 
 ## Status
@@ -29,7 +29,12 @@ It brings four packages together:
 | Zones and records stored in MongoDB, answered from memory | Available |
 | Management of zones and records through the API | Available |
 | Standalone records: single names without a zone | Available |
-| Blocklists: names that are not looked up, from lists such as hosts files | Available |
+| Blocking: names that are not looked up, from block lists such as hosts files and from rules set by hand | Available |
+| Monitoring: the query log, the clients and the most asked names | Available |
+| DNSSEC validation of the forwarded addresses | Available, off by default |
+| Export and import of the configuration | Available |
+| HTTPS with a certificate of Let's Encrypt, or one of your own | Available |
+| Swagger UI of the API at `/api/docs` | Available |
 | Settings changed by the admins in the browser | Available |
 | Graphs of the queries, the answer time, the memory and the cache | Available |
 | Zone transfers (AXFR) to secondary servers | Planned |
@@ -125,9 +130,11 @@ environment variable, what was saved in the browser, its default.
 | `ODIN_NS_CACHE_ENABLED` | `true` | Keep answers in memory |
 | `ODIN_NS_CACHE_MAX_ENTRIES` | `10000` | Size of the cache; the oldest entry is dropped when it is full |
 | `ODIN_NS_NEGATIVE_CACHE_TTL` | `30` | Seconds a "no such name" or "no such record" answer is kept |
-| `ODIN_NS_BLOCKING_ENABLED` | `true` | Block the names of the [blocklists](#blocklists) |
-| `ODIN_NS_BLOCK_MODE` | `null` | The answer for a blocked name: `null` for the address `0.0.0.0`, `nxdomain` for "no such name" |
-| `ODIN_NS_BLOCKLIST_REFRESH` | `24` | Hours between two downloads of a blocklist |
+| `ODIN_NS_DNSSEC` | `off` | [DNSSEC](#dnssec) for the forwarded addresses: `off`, `validate` (the signatures are verified here) or `trust-ad` (the validation of the upstream is trusted) |
+| `ODIN_NS_BLOCKLIST_REFRESH` | `24` | Hours between two downloads of a block list. The switch of the [blocking](#blocking) and its answer are kept in the database, and set on the Blocking page |
+| `ODIN_NS_QUERY_LOG_ENABLED` | `true` | Record the queries for the [monitoring](#monitoring) |
+| `ODIN_QUERY_LOG_RETENTION_DAYS` | `30` | Days a recorded query is kept. `0`: the queries are counted, but not stored |
+| `ODIN_METRICS_RETENTION_DAYS` | `365` | Days the hourly metrics are kept. `0`: forever |
 
 ### Management API
 
@@ -135,17 +142,25 @@ environment variable, what was saved in the browser, its default.
 | --- | --- | --- |
 | `ODIN_API_ENABLED` | `true` | Start the management API. Set to `false` to run the DNS server only; the zones of the database are still served |
 | `ODIN_HTTP_ENABLED` / `ODIN_HTTP_PORT` | `true` / `45451` | Plain HTTP listener |
-| `ODIN_HTTPS_ENABLED` / `ODIN_HTTPS_PORT` | `false` / `45452` | HTTPS listener; takes precedence over HTTP when enabled |
+| `ODIN_HTTPS_ENABLED` / `ODIN_HTTPS_PORT` | `false` / `45452` | HTTPS listener; takes precedence over HTTP when enabled. See [HTTPS](#https) |
+| `ODIN_HTTPS_CERT_SOURCE` | `custom` | Where the certificate comes from: `custom` (files of your own) or `letsencrypt` |
+| `ODIN_HTTPS_KEY` / `ODIN_HTTPS_CERT` | `sslcert/server.key` / `sslcert/server.crt` | `custom`: the private key and the certificate, in PEM |
+| `ODIN_HTTPS_KEY_PASSPHRASE` | – | `custom`: the passphrase of the private key, when it is encrypted |
+| `ODIN_HTTPS_DOMAINS` | – | `letsencrypt`: the public names of this server, comma separated. Required |
+| `ODIN_ACME_EMAIL` / `ODIN_ACME_DIRECTORY` | – / `production` | `letsencrypt`: the e-mail of the account, and `production`, `staging` or the directory URL of another ACME authority |
+| `ODIN_ACME_HTTP_PORT` / `ODIN_ACME_FOLDER` | `80` / `sslcert/letsencrypt` | `letsencrypt`: the port that answers the challenge, and where the keys are kept |
+| `ODIN_DOCS_ENABLED` | `true` | The Swagger UI of the API at `/api/docs` |
+| `ODIN_MONITORING_ROLES` | `admin` | Roles that may read the query log, the clients and the metrics |
 | `ODIN_AUTH_ENABLED` | `true` | Set to `false` to skip token checks. For local development only |
 | `ODIN_UI_ENABLED` | `true` | Serve the user interface next to the API |
-| `ODIN_DNS_WRITE_ROLES` | `admin` | Roles that may change zones and records, comma separated, e.g. `admin,user`. Every signed-in user may read them |
+| `ODIN_DNS_WRITE_ROLES` | `admin` | Roles that may change zones, records and the blocking, comma separated, e.g. `admin,user`. Every signed-in user may read them |
 | `ODIN_DB_ADDRESS` / `ODIN_DB_PORT` / `ODIN_DB_NAME` | `127.0.0.1` / `27017` / `odin-ns-manager-1` | MongoDB location |
 | `ODIN_DB_USER` / `ODIN_DB_PWD` | `Test` / `Test` | MongoDB credentials; set the user to an empty value to connect without authentication |
 
 These settings are handed to freya-ns-api as its own `FREYA_*` variables. A
 `FREYA_*` variable that is set explicitly wins, and is also the way to reach
 the settings that have no `ODIN_*` counterpart, such as `FREYA_DB_URI`,
-`FREYA_TOKEN_EXPIRES_IN`, `FREYA_HTTPS_KEY` / `FREYA_HTTPS_CERT` and
+`FREYA_TOKEN_EXPIRES_IN`, `FREYA_BLOCKLIST_MAX_SIZE_MB`, `FREYA_IMPORT_MAX_SIZE_MB` and
 `FREYA_ADMIN_USER` / `FREYA_ADMIN_EMAIL` / `FREYA_ADMIN_PWD`. See the
 [freya-ns-api documentation](https://github.com/csabatibortoth/freya-ns-api#configuration).
 
@@ -157,7 +172,7 @@ there is written to `config/settings.json` (`ODIN_SETTINGS_FILE` names another
 file), which is not part of the repository.
 
 - **At once** – the name of the server and the company, the upstream servers
-  with their timeout and attempts, the cache, the blocking, and the time
+  with their timeout and attempts, DNSSEC, the cache, the recording of the queries, and the time
   between two checks of the database change while the server runs. A change of the upstream
   empties the cache.
 - **After a restart** – the addresses, ports and listeners, the roles, logging
@@ -226,48 +241,96 @@ giving a name of somebody else another answer on this server.
   forwarded any more, also not for the types it has no record of: those get an
   empty answer. The names around it are forwarded as before.
 - **Types, aliases, TTL** – the same record types as in a zone. A CNAME is
-  answered together with the records of its target. Every record has its own
-  TTL, 3600 seconds by default.
+  answered together with the records of its target. A record has its own
+  TTL, or 3600 seconds.
 - **Wildcards** – `*.dev.example` stands for every name below `dev.example`
   that has no standalone records of its own.
-- **Zones come first** – a name inside one of the zones belongs to the zone,
-  and the API refuses a standalone record for it.
+- **Zones come first** – a name inside one of the zones is answered by the
+  zone: a standalone record for it is not served, so add it to the zone.
 
-They are kept in memory and refreshed together with the zones.
+They are the standalone records of freya-ns-api (`/api/records`): the records
+without a zone. A record without a TTL of its own is answered with 3600
+seconds. They are kept in memory and refreshed together with the zones.
 
 ![The standalone records](docs/screenshots/records.png)
 
-### Blocklists
+### Blocking
 
-A blocklist is a list of names the server does not look up: advertising,
-trackers, malware. It is given by its address, such as
-`https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts`, on the
-Blocklists page or through `/api/blocklists`. The server downloads it, keeps
-its names in MongoDB, and answers them from memory.
+The server does not look up unwanted names: advertising, trackers, malware.
+What is blocked is the blocking of freya-ns-api, managed on the Blocking page
+or through `/api/blocking`, and comes from two places:
 
-- **Formats** – the lines of a hosts file (`0.0.0.0 ads.example.com`), plain
-  names, and the `||ads.example.com^` lines of the filter lists of ad
-  blockers. The names a hosts file has for the machine itself, such as
-  `localhost`, are left out.
+- **Block lists** – lists of names that are downloaded from their address,
+  such as `https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts`.
+  The lines of a hosts file (`0.0.0.0 ads.example.com`), plain names, and the
+  `||ads.example.com^` rules of ad blockers are understood. A list is matched
+  by the exact name.
+- **Rules** – single domains that are blocked, or allowed, by hand, optionally
+  with every name below them. A rule wins over the lists: the rule of the name
+  itself decides, or else the nearest one above it that includes its subdomains.
+
+How the server uses them:
+
 - **The answer** – a blocked name gets the address `0.0.0.0` (`::` for AAAA,
-  and an empty answer for the other types), or "no such name" with
-  `ODIN_NS_BLOCK_MODE=nxdomain`. It is not sent to the upstream.
-- **Exact names** – a hosts file names every name itself, so only the names of
-  the list are blocked. A list can be set to block the names below its names as
-  well.
-- **Allowed names** – a name that is allowed, and every name below it, is
-  looked up even when a list blocks it.
+  and an empty answer for the other types), or "no such name". It is not sent
+  to the upstream. The answer, and the switch of all blocking, are the settings
+  of the blocking: they are kept in the database, and changed on the Blocking
+  page.
+- **From memory** – the names and the rules are kept in memory, so a query
+  never waits for the database. A change is picked up when its request is
+  done, and within 15 seconds when it was made elsewhere.
 - **Own names come first** – the names of the zones and the standalone records
   are never blocked.
 - **Refresh** – a list is downloaded again every `ODIN_NS_BLOCKLIST_REFRESH`
   hours, and on request. When a download fails, the names of the last one stay
   in use, the reason is shown with the list, and it is tried again 15 minutes
-  later.
+  later. (`FREYA_BLOCKLIST_REFRESH_CRON` adds a schedule by the clock.)
+- **Check** – the Blocking page tells whether a domain is blocked, and why.
 
-Only admins add and change the lists, as the server downloads from the
-addresses they give. A download is limited to 64 MB.
+The lists and the rules are changed by the roles in `ODIN_DNS_WRITE_ROLES`.
+The server downloads whatever address it is given: leave those roles to the
+people who are trusted with that. A download is limited to 64 MB.
 
-![The blocklists and the allowed names](docs/screenshots/blocklists.png)
+### Monitoring
+
+The DNS server reports every query it answered to the monitoring of
+freya-ns-api: the client, the name, the type, the response code, whether it was
+blocked, and how long the answer took. They are noted in memory and written
+every five seconds, so a query never waits for the database.
+
+- **Queries** – the query log, with filters for the name, the client, the type
+  and the answer. A name can be blocked or allowed straight from it.
+- **Clients** – every address that sent a query, with its counters. A client
+  can be given a name.
+- **Dashboard** – the totals of the last 24 hours, the most asked and the most
+  blocked names, and the busiest clients.
+
+The queries show what every client looks up, so the monitoring can only be
+read by the roles in `ODIN_MONITORING_ROLES`. `ODIN_NS_QUERY_LOG_ENABLED=false`
+switches the recording off; `ODIN_QUERY_LOG_RETENTION_DAYS` and
+`ODIN_METRICS_RETENTION_DAYS` say how long the data is kept.
+
+### DNSSEC
+
+With `ODIN_NS_DNSSEC` the addresses (A and AAAA) the upstream answers are
+checked with the DNSSEC validation of bragi-ns-client before they are passed
+on. It is off by default.
+
+| Mode | Who validates | Cost |
+| --- | --- | --- |
+| `validate` | This server: the signatures are verified up to the root keys | A few extra queries for the first lookup in a domain |
+| `trust-ad` | The upstream; its "authentic data" flag is believed. Only for an upstream that validates, over a network you trust | One extra query |
+
+- A **forged or broken** answer of a signed domain is refused: the client gets
+  a server failure, as from any validating resolver.
+- For a **signed** domain nothing but the validated addresses is answered.
+- A domain that is **not signed** – most of them – is answered as before.
+- The other record types are not checked, and the answers of this server are
+  not signed themselves.
+
+The dashboard counts the checked lookups, and the Lookup page shows what
+DNSSEC said about a name. The `validate` mode needs a correct system clock,
+and an upstream that hands over the DNSSEC records, which nearly all do.
 
 ### Forwarding
 
@@ -286,6 +349,26 @@ up; a query for another type is answered with "not implemented".
 The cache lives in the memory of the process and is empty after a restart. It
 is only for the answers of the upstream; the own zones are not in it.
 
+## HTTPS
+
+Set `ODIN_HTTPS_ENABLED=true` to serve the API and the user interface over
+HTTPS; the plain HTTP listener is not started then. The certificate comes from
+one of two sources, `ODIN_HTTPS_CERT_SOURCE`:
+
+- **`custom`** (default) – a private key and a certificate of your own, in
+  `sslcert/server.key` and `sslcert/server.crt` of this project. They can be
+  replaced without a restart: on the Certificate page, or by overwriting the
+  files, which the server notices within the hour.
+- **`letsencrypt`** – the server requests a certificate for the names in
+  `ODIN_HTTPS_DOMAINS` on the first start, and renews it by itself. Every name
+  must lead to this server in the public DNS, and port 80 must reach it from
+  the internet. Try it with `ODIN_ACME_DIRECTORY=staging` first.
+
+The Certificate page shows the certificate that is served and when it expires.
+The keys are kept under `sslcert/`, which is not part of the repository. See
+the [freya-ns-api documentation](https://github.com/csabatibortoth/freya-ns-api#https)
+for the details.
+
 ## User interface
 
 The user interface is served by the HTTP(S) server of the management API, at
@@ -294,20 +377,30 @@ built on [Athena UI](https://github.com/csabatibortoth/athena-ui) and jQuery,
 which are served from their packages: the page loads nothing from other servers.
 It follows the light or dark mode of the system.
 
+The menu is a sidebar next to the content. On a screen that is narrower than
+1000 pixels it is a drawer, opened with the menu button of the header; and on a
+phone the rows of the tables are shown as blocks, so nothing has to be scrolled
+sideways.
+
 | Page | Who | What it does |
 | --- | --- | --- |
 | Dashboard | signed in | Graphs of the queries per minute, the answer time, the memory and the cache, over the last 15 minutes to 24 hours; and the state of the service, the DNS server, the zones and the upstream servers. Admins can reload the zones and clear the cache |
 | Zones | signed in | List and search the zones; add, edit and delete them |
 | *a zone* | signed in | The SOA record and the records of a zone; add, edit and delete records |
 | Records | signed in | The standalone records, which belong to no zone; add, edit and delete them |
-| Blocklists | signed in | The blocklists with their state, and the allowed names. Admins add, update and delete them |
-| Lookup | signed in | Asks the DNS server for a name, and shows where the answer came from: a zone, the standalone records, a blocklist or the upstream |
+| Blocking | signed in | The switch and the answer of the blocking, the block lists with their state and their names, the rules, and the check of a domain |
+| Lookup | signed in | Asks the DNS server for a name, and shows where the answer came from: a zone, the standalone records, the blocking or the upstream, and what DNSSEC said |
+| Queries | monitoring roles | The query log, with its filters; block or allow a name from it |
+| Clients | monitoring roles | The clients of the DNS server and their counters; name or forget them |
 | Users | admin | List, add, edit and delete users, and set their passwords |
 | Logs | admin | The general, error and security log of a day |
+| Backup | admin | Export the zones, records, blocking and users as a file, and import such a file |
+| Certificate | admin | The certificate of HTTPS; renew it, or replace your own |
 | Settings | admin | The configuration of the server; see [Settings](#settings) |
-| Account | signed in | Your own account: display name, e-mail and password, and for admins the username. Also reached by the name at the top of the page |
+| API docs | signed in | Opens the Swagger UI of the API |
+| Account | signed in | Your own account: display name, e-mail and password, and for admins the username |
 
-Zones and records can be changed by the roles in `ODIN_DNS_WRITE_ROLES`; the
+Zones, records and the blocking can be changed by the roles in `ODIN_DNS_WRITE_ROLES`; the
 other users see them read-only.
 
 The history behind the graphs is kept in memory: a sample every 10 seconds for
@@ -318,7 +411,7 @@ restart. Every graph has its values as a table below it.
 
 ### Screenshots
 
-The screenshots are of a demo installation with sample zones and records, and generated queries.
+The screenshots are of a demo installation with sample zones and records, and generated queries. They were taken with version 2.2.2: the menu and the Blocking page have changed since.
 
 | | |
 | --- | --- |
@@ -341,7 +434,7 @@ send the token with every request as `Authorization: Bearer <token>`.
 
 | Method | Path | Who | Purpose |
 | --- | --- | --- | --- |
-| GET | `/` | anyone | Welcome message |
+| GET | `/` | signed in | Welcome message |
 | POST | `/auth/login` | anyone | `{ username, password }` returns a token |
 | GET | `/auth/me` | signed in | The current user |
 | POST | `/auth/logout` | signed in | Revokes every token of the current user |
@@ -352,8 +445,22 @@ send the token with every request as `Authorization: Bearer <token>`.
 | GET, PATCH, DELETE | `/zones/:zoneId` | signed in, admin | Read, update and delete a zone. Deleting a zone deletes its records |
 | GET, POST | `/zones/:zoneId/records` | signed in, admin | List and create records: `{ name, type, data, ttl?, active? }` |
 | GET, PATCH, DELETE | `/zones/:zoneId/records/:recordId` | signed in, admin | Read, update and delete a record |
+| GET, POST, PATCH, DELETE | `/records`, `/records/:recordId` | signed in, admin | The standalone records: `{ name, type, data, ttl?, active? }`, with a fully qualified name |
+| GET, PATCH | `/blocking/settings` | signed in, admin | The switch and the answer of the blocking: `{ enabled, mode }` |
+| GET | `/blocking/check?domain=` | signed in | Whether a domain is blocked, and why |
+| GET, POST, PATCH, DELETE | `/blocking/lists`, `/blocking/lists/:listId` | signed in, admin | The block lists: `{ name, url, description?, active? }`; `.../refresh` downloads, `.../entries` lists the names |
+| GET, POST, PATCH, DELETE | `/blocking/rules`, `/blocking/rules/:ruleId` | signed in, admin | The rules: `{ domain, action, includeSubdomains?, comment?, active? }` |
+| GET, DELETE | `/monitoring/queries` | monitoring roles | The query log |
+| GET | `/monitoring/metrics`, `/monitoring/top` | monitoring roles | The counters of a period, and the most asked names and busiest clients |
+| GET, PATCH, DELETE | `/monitoring/clients`, `/monitoring/clients/:clientId` | monitoring roles | The clients |
+| GET, POST | `/backup/export`, `/backup/import` | admin | Everything as one JSON document, and reading it back |
+| GET, PUT | `/certificate`; POST `/certificate/renew` | admin | The certificate of HTTPS |
+| GET | `/docs`, `/docs/openapi.json` | anyone | Swagger UI, and the OpenAPI description |
 
-Zones and records can be read by every signed-in user, and changed by the roles
+Everything but the login, the docs and `/service/info` needs a token: without one the
+answer is 401, also for a path that does not exist.
+
+Zones, records and the blocking can be read by every signed-in user, and changed by the roles
 in `ODIN_DNS_WRITE_ROLES`. The SOA record of a zone and its serial are kept by
 the API; the serial is raised on every change.
 
@@ -365,21 +472,14 @@ curl -X POST http://localhost:45451/api/auth/login \
 
 These endpoints are the ones of freya-ns-api; see its
 [documentation](https://github.com/csabatibortoth/freya-ns-api#api) for the
-details of every endpoint.
+details of every endpoint, or open `/api/docs`.
 
-The manager adds these, for the standalone records, the blocklists and the service itself:
+The manager adds these, for the service itself:
 
 | Method | Path | Who | Purpose |
 | --- | --- | --- | --- |
-| GET, POST | `/records` | signed in, admin | List and create standalone records: `{ name, type, data, ttl?, active? }`, with a fully qualified name |
-| GET, PATCH, DELETE | `/records/:recordId` | signed in, admin | Read, update and delete a standalone record |
-| GET, POST | `/blocklists` | signed in, admin | List and create blocklists: `{ name, url, subdomains?, active? }`. A new list is downloaded at once |
-| GET, PATCH, DELETE | `/blocklists/:listId` | signed in, admin | Read, update and delete a blocklist |
-| POST | `/blocklists/:listId/update` | admin | Downloads the list now |
-| GET, POST | `/blocklists/allowed` | signed in, admin | List and add allowed names: `{ name, note? }` |
-| DELETE | `/blocklists/allowed/:allowedId` | admin | Removes an allowed name |
 | GET | `/service/info` | anyone | Name, version and build, and whether signing in is needed |
-| GET | `/service/status` | signed in | The state of the service, the DNS server, the zones and the cache |
+| GET | `/service/status` | signed in | The state of the service, the DNS server, the zones, the blocking, the monitoring, DNSSEC and the cache |
 | GET | `/service/metrics?range=` | signed in | The history of the queries, the answer time, the memory and the cache: `15m`, `1h`, `6h` or `24h` |
 | GET | `/service/config` | admin | Every setting, with its value and where it comes from |
 | PATCH | `/service/config` | admin | Changes settings: `{ key: value }`; `null` brings a setting back to its default |
@@ -403,7 +503,7 @@ npm test
 ```
 
 The tests ask a DNS server on a local port for the names of zones, standalone
-records and blocklists that are held in memory, and change the settings in a
+records and blocked names that are held in memory, and change the settings in a
 temporary file; they need no database.
 
 ## Project layout
@@ -412,23 +512,88 @@ temporary file; they need no database.
 | --- | --- |
 | `server.js` | Entry point: starts the DNS server, the management API and the user interface |
 | `config/` | Configuration: the settings, their defaults, and the file the admins save them to |
-| `model/mongoDB/standaloneRecordModel.js` | The standalone records in MongoDB |
-| `model/mongoDB/blocklistModel.js` | The blocklists and the allowed names in MongoDB |
-| `services/serverService/blockService.js` | The blocklists: downloading, loading from MongoDB and answering from memory |
+| `services/serverService/blockService.js` | The blocking: loading the lists and rules from MongoDB, answering from memory, and the refresh of the lists |
+| `services/serverService/queryLogService.js` | Reports the answered queries to the monitoring |
 | `services/serverService/zoneService.js` | The own zones and standalone records: loading from MongoDB and answering from memory |
-| `services/serverService/searchService.js` | Upstream lookups and the in-memory cache |
+| `services/serverService/searchService.js` | Upstream lookups, their DNSSEC check and the in-memory cache |
 | `services/serverService/statusService.js` | Counters of the DNS server and their history, for the dashboard |
 | `services/serverService/buildInfo.js` | The build number of the running server |
 | `services/apiService/apiService.js` | Database connection, start and stop of the management API, logging |
 | `services/apiService/serviceRoutes.js` | The `/api/service` endpoints |
-| `services/apiService/recordRoutes.js` | The `/api/records` endpoints of the standalone records |
-| `services/apiService/blocklistRoutes.js` | The `/api/blocklists` endpoints |
+| `services/apiService/migration.js` | Carries the data of the releases before 2.3.0 over |
 | `services/uiService/uiService.js` | Serves the user interface |
 | `ui/` | The user interface: page, theme and scripts |
 | `docs/screenshots/` | Screenshots of the user interface |
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.3.0
+
+Updates freya-ns-api to 2.3.1 and bragi-ns-client to 2.1.0, and puts what they
+brought to use.
+
+#### Added
+
+- **Monitoring.** The DNS server reports its queries to the monitoring of
+  freya-ns-api. New Queries and Clients pages, and the most asked names, the
+  most blocked names and the busiest clients on the dashboard. See
+  [Monitoring](#monitoring).
+- **Block rules.** Single domains blocked or allowed by hand, with or without
+  the names below them, and a check that tells why a domain is blocked. The
+  names of a block list can be looked through. See [Blocking](#blocking).
+- **DNSSEC** for the forwarded addresses, with the validation of
+  bragi-ns-client 2.1: `ODIN_NS_DNSSEC`. See [DNSSEC](#dnssec).
+- **Backup page:** export and import of the zones, records, blocking and users.
+- **HTTPS with Let's Encrypt**, certificates that are replaced without a
+  restart, and a Certificate page. See [HTTPS](#https).
+- **Swagger UI** of the API at `/api/docs`, linked from the menu.
+- **A menu for every screen.** The menu is a sidebar, grouped by subject; on
+  small screens it opens with a menu button, and the tables are readable on a
+  phone without scrolling sideways.
+
+#### Changed
+
+- The standalone records and the blocking are the ones of freya-ns-api now,
+  instead of our own: `/api/records` answers as before, `/api/blocklists` is
+  replaced by `/api/blocking`.
+- The switch of the blocking and the answer for a blocked name are kept in the
+  database, and set on the Blocking page. `ODIN_NS_BLOCKING_ENABLED` and
+  `ODIN_NS_BLOCK_MODE` are no longer settings.
+- Block lists are changed by the roles in `ODIN_DNS_WRITE_ROLES`, not only by
+  admins, and a new list is downloaded in the background.
+- Every endpoint of the API needs a token, except the login, the docs and
+  `/api/service/info`: `GET /api/` too.
+- The certificate files of HTTPS are looked for in `sslcert/` of this project.
+- The address of the Blocklists page is `#/blocking`; `#/blocklists` leads there.
+
+#### Upgrading from 2.2.2
+
+- Run `npm install`.
+- The data is carried over at the first start, and the console says what was:
+  the standalone records, the block lists (which are downloaded again), the
+  allowed names (as rules that allow the name and what is below it), and what
+  `ODIN_NS_BLOCKING_ENABLED` and `ODIN_NS_BLOCK_MODE` were set to. Remove those
+  two variables afterwards.
+- **A block list no longer blocks the names below its names.** A list that had
+  this option needs a rule with "also for every name below the domain" for the
+  domains that matter.
+- A standalone record for a name inside a zone is no longer refused by the
+  API; it is not served, as the zone answers the name.
+- With HTTPS enabled: the key and the certificate in the folder of
+  freya-ns-api are still found, but an update of the package removes them.
+  Move them to `sslcert/server.key` and `sslcert/server.crt` of this project.
+- A script that calls `/api/blocklists` has to move to `/api/blocking`, and a
+  health check that calls `GET /api/` without a token to `/api/service/info`.
+- The queries are recorded from now on, and kept for 30 days. Set
+  `ODIN_NS_QUERY_LOG_ENABLED=false` if that is not wanted.
+
+#### Not yet included
+
+- Zone transfers (AXFR) are refused, and responses have no authority section.
+- A name that is an alias (CNAME) of a blocked name is not blocked.
+- DNSSEC is checked for A and AAAA only, and the own answers are not signed.
+- The screenshots above still show version 2.2.2.
 
 ### 2.2.2
 

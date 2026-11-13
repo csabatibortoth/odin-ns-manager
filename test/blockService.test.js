@@ -1,5 +1,6 @@
-// The blocklists are given as lists of names, and asked over a real DNS server
-// on a local port; no database and no download is needed.
+// The names of the block lists and the block rules are given as they are read
+// from the database, and asked over a real DNS server on a local port; no
+// database and no download is needed.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -12,32 +13,21 @@ const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'odin-block-'));
 process.env.ODIN_SETTINGS_FILE = path.join(folder, 'settings.json');
 
 const named = require('njord-ns-server');
-const config = require('../config/config');
 const blockService = require('../services/serverService/blockService');
 
-const HOSTS = `# Title: a hosts file
-127.0.0.1 localhost
-127.0.0.1 localhost.localdomain
-255.255.255.255 broadcasthost
-::1 localhost
-0.0.0.0 0.0.0.0
-
-# Start of the list
-0.0.0.0 Ads.Example.com
-0.0.0.0 tracker.example.net # a comment
-0.0.0.0 ads.example.com
-127.0.0.1 two.example.org three.example.org
-0.0.0.0 not_a_name!
-`;
+const NAMES = ['ads.example.com', 'tracker.example.net', 'two.example.org', 'three.example.org', 'fine.telemetry.test'];
+const RULES = [
+    { domain: 'telemetry.test', action: 'block', includeSubdomains: true },
+    { domain: 'fine.telemetry.test', action: 'allow', includeSubdomains: true },
+    { domain: 'two.example.org', action: 'allow', includeSubdomains: false },
+    { domain: 'exact.test', action: 'block', includeSubdomains: false },
+];
 
 const server = named.createServer();
 const resolver = new Resolver({ tries: 1, timeout: 2000 });
 
 before(async () => {
-    blockService.replace(
-        [{ names: blockService.parseList(HOSTS), subdomains: false }, { names: ['telemetry.test'], subdomains: true }],
-        ['fine.telemetry.test', 'two.example.org']
-    );
+    blockService.replace({ settings: { enabled: true, mode: 'NULL_IP' }, names: NAMES, lists: 1, rules: RULES });
     server.on('query', (query) => {
         if (!blockService.resolve(query)) query.setError('erefuse'); // stands for the upstream lookup
         server.send(query);
@@ -51,49 +41,47 @@ after(async () => {
     fs.rmSync(folder, { recursive: true, force: true });
 });
 
-test('reads the names of a hosts file, without the ones of the machine itself', () => {
-    assert.deepEqual(blockService.parseList(HOSTS), ['ads.example.com', 'tracker.example.net', 'two.example.org', 'three.example.org']);
-});
-
-test('reads plain names and the lines of filter lists', () => {
-    const text = '! Title: filters\n[Adblock Plus 2.0]\nplain.example.com\n||filter.example.com^\nplain.example.com.\n\nsome words that are not names\n';
-    assert.deepEqual(blockService.parseList(text), ['plain.example.com', 'filter.example.com']);
-});
-
 test('a blocked name is answered with the null address', async () => {
     assert.deepEqual(await resolver.resolve4('ads.example.com'), ['0.0.0.0']);
     assert.deepEqual(await resolver.resolve4('ADS.Example.Com'), ['0.0.0.0']);
     assert.deepEqual(await resolver.resolve6('ads.example.com'), ['::']);
     await assert.rejects(resolver.resolveMx('ads.example.com'), { code: 'ENODATA' });
+    assert.equal(blockService.reason('ads.example.com'), 'list');
 });
 
 test('the other names are left for the upstream', async () => {
     await assert.rejects(resolver.resolve4('example.com'), { code: 'EREFUSED' });
-    // A hosts file names every name itself: the names below are not blocked
+    // A list is matched by the exact name: the names below are not blocked
     await assert.rejects(resolver.resolve4('www.ads.example.com'), { code: 'EREFUSED' });
+    assert.equal(blockService.reason('example.com'), null);
 });
 
-test('a list can block the names below its names as well', async () => {
+test('a rule blocks a name, and the names below it when it says so', async () => {
     assert.deepEqual(await resolver.resolve4('telemetry.test'), ['0.0.0.0']);
     assert.deepEqual(await resolver.resolve4('a.b.telemetry.test'), ['0.0.0.0']);
+    assert.equal(blockService.reason('a.b.telemetry.test'), 'rule');
+    assert.deepEqual(await resolver.resolve4('exact.test'), ['0.0.0.0']);
+    await assert.rejects(resolver.resolve4('www.exact.test'), { code: 'EREFUSED' });
 });
 
-test('an allowed name, and the names below it, are not blocked', async () => {
+test('a rule that allows wins over the lists, and the nearest rule over the ones above it', async () => {
     await assert.rejects(resolver.resolve4('two.example.org'), { code: 'EREFUSED' });
     await assert.rejects(resolver.resolve4('fine.telemetry.test'), { code: 'EREFUSED' });
     await assert.rejects(resolver.resolve4('www.fine.telemetry.test'), { code: 'EREFUSED' });
     assert.deepEqual(await resolver.resolve4('other.telemetry.test'), ['0.0.0.0']);
 });
 
-test('the answer and the blocking itself follow the settings', async () => {
-    config.update({ nsBlockMode: 'nxdomain' });
+test('the answer and the blocking itself follow the settings of the blocking', async () => {
+    blockService.replace({ settings: { enabled: true, mode: 'NXDOMAIN' } });
     await assert.rejects(resolver.resolve4('ads.example.com'), { code: 'ENOTFOUND' });
+    assert.equal(blockService.state().mode, 'NXDOMAIN');
 
-    config.update({ nsBlockingEnabled: false });
+    blockService.replace({ settings: { enabled: false, mode: 'NXDOMAIN' } });
     await assert.rejects(resolver.resolve4('ads.example.com'), { code: 'EREFUSED' });
+    await assert.rejects(resolver.resolve4('telemetry.test'), { code: 'EREFUSED' });
     assert.equal(blockService.isBlocked('ads.example.com'), false);
 
-    config.update({ nsBlockingEnabled: true, nsBlockMode: 'null' });
+    blockService.replace({ settings: { enabled: true, mode: 'NULL_IP' } });
     assert.deepEqual(await resolver.resolve4('ads.example.com'), ['0.0.0.0']);
-    assert.throws(() => config.update({ nsBlockMode: 'zero' }), (err) => Boolean(err.details.nsBlockMode));
+    assert.deepEqual(blockService.state(), { enabled: true, mode: 'NULL_IP', lists: 1, names: 5, rules: 4, watching: false, failing: false, loadedAt: null });
 });

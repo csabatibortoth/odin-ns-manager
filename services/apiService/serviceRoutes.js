@@ -10,6 +10,7 @@ const express = require('express');
 
 const config = require('../../config/config');
 const blockService = require('../serverService/blockService');
+const queryLogService = require('../serverService/queryLogService');
 const build = require('../serverService/buildInfo');
 const searchService = require('../serverService/searchService');
 const statusService = require('../serverService/statusService');
@@ -55,7 +56,9 @@ function status() {
             queries: { ...statusService.queries },
         },
         zones: { enabled: config.nsZonesEnabled, refresh: config.nsZoneRefresh, ...zoneService.state() },
-        blocking: blockService.state(),
+        blocking: { refresh: config.nsBlocklistRefresh, ...blockService.state() },
+        monitoring: queryLogService.state(),
+        dnssec: searchService.dnssecState(),
         cache: { enabled: config.nsCacheEnabled, entries: searchService.cacheSize(), max: config.nsCacheMaxEntries },
         upstream: searchService.upstreamServers(),
     };
@@ -81,7 +84,7 @@ async function lookup(query) {
     let source = 'upstream';
     if (zone) source = 'zone';
     else if (zoneService.isStandalone(name)) source = 'records';
-    else if (blockService.isBlocked(name)) source = 'blocklist';
+    else if (blockService.isBlocked(name)) source = blockService.reason(name) === 'rule' ? 'blockrule' : 'blocklist';
     const result = { name, type, zone, source, answers: [], error: null };
     const started = performance.now();
     try {
@@ -91,6 +94,13 @@ async function lookup(query) {
         result.error = err.code || err.message;
     }
     result.ms = Math.round((performance.now() - started) * 10) / 10;
+    // What DNSSEC said about a forwarded address: 'secure', 'insecure' or 'bogus'; null when it was not checked
+    result.dnssec = null;
+    if (source === 'upstream' && config.nsDnssec !== 'off' && (type === 'A' || type === 'AAAA')) {
+        const secure = searchService.secureOf(name, type);
+        if (secure !== undefined) result.dnssec = secure ? 'secure' : 'insecure';
+        else if (searchService.failureOf(name, type) === 'EDNSSEC_BOGUS') result.dnssec = 'bogus';
+    }
     return result;
 }
 
@@ -184,6 +194,8 @@ function createRouter() {
             build,
             authEnabled: config.authEnabled,
             dnsWriteRoles: config.dnsWriteRoles,
+            monitoringRoles: config.monitoringRoles,
+            docsEnabled: config.docsEnabled,
         });
     });
 

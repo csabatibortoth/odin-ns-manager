@@ -1,31 +1,47 @@
 // The user interface of Odin NS Manager. Athena UI generates the page (header
-// with the menu, content, footer) and the login form; the pages are in pages.js.
+// with the menu, content, footer) and the login form; the pages are in
+// pages.js, blocking.js, monitoring.js and service.js.
+//
+// The menu of Athena UI is shown as a sidebar next to the content. Where the
+// screen is too narrow for that it is a drawer, opened with the menu button of
+// the header: see "Menu" in theme.css.
 
 /* global $ */
 
 import { init, clearWrapper, clearHeaderMenu, generateHeaderMenu, generateLoginForm } from '../vendor/athena-ui/athena-ui.js';
-import { api, session, events, setToken, hasToken, onSessionEnd, isAdmin } from './api.js';
+import { api, session, events, setToken, hasToken, onSessionEnd, isAdmin, canMonitor } from './api.js';
 import { el, notice, closeDialog, errorText } from './ui.js';
 import * as pages from './pages.js';
+import { blocking } from './blocking.js';
+import { queries, clients } from './monitoring.js';
+import { backup, certificate } from './service.js';
 
-// The pages of the menu. admin: only for admins; own: only when users sign in
+// The pages of the menu, in its groups. admin: only for admins; monitor: only
+// for the roles of the monitoring; own: only when users sign in; when: any other condition
 const MENU = [
     { label: 'Dashboard', route: 'dashboard', render: pages.dashboard },
-    { label: 'Zones', route: 'zones', render: pages.zones },
-    { label: 'Records', route: 'records', render: pages.records },
-    { label: 'Blocklists', route: 'blocklists', render: pages.blocklists },
-    { label: 'Lookup', route: 'lookup', render: pages.lookup },
-    { label: 'Users', route: 'users', render: pages.users, admin: true },
-    { label: 'Logs', route: 'logs', render: pages.logs, admin: true },
-    { label: 'Settings', route: 'settings', render: pages.settings, admin: true },
-    { label: 'Account', route: 'account', render: pages.account, own: true },
-    { label: 'Sign out', action: signOut, own: true },
+    { group: 'DNS', label: 'Zones', route: 'zones', render: pages.zones },
+    { group: 'DNS', label: 'Records', route: 'records', render: pages.records },
+    { group: 'DNS', label: 'Blocking', route: 'blocking', render: blocking },
+    { group: 'DNS', label: 'Lookup', route: 'lookup', render: pages.lookup },
+    { group: 'Monitoring', label: 'Queries', route: 'queries', render: queries, monitor: true },
+    { group: 'Monitoring', label: 'Clients', route: 'clients', render: clients, monitor: true },
+    { group: 'Service', label: 'Users', route: 'users', render: pages.users, admin: true },
+    { group: 'Service', label: 'Logs', route: 'logs', render: pages.logs, admin: true },
+    { group: 'Service', label: 'Backup', route: 'backup', render: backup, admin: true },
+    { group: 'Service', label: 'Certificate', route: 'certificate', render: certificate, admin: true },
+    { group: 'Service', label: 'Settings', route: 'settings', render: pages.settings, admin: true },
+    { group: 'Service', label: 'API docs', action: () => window.open('/api/docs/', '_blank', 'noopener'), when: () => session.info?.docsEnabled !== false },
+    { group: 'You', label: 'Account', route: 'account', render: pages.account, own: true },
+    { group: 'You', label: 'Sign out', action: signOut, own: true },
 ];
 
 // Athena UI reads the menu from this object whenever the menu is generated
 const menuItems = { headerMenu: [], footerMenu: [] };
 
-const allowed = (item) => Boolean(session.user) && (!item.admin || isAdmin()) && (!item.own || Boolean(session.user.id));
+const itemId = (item) => `menu-${item.route || item.label.toLowerCase().replace(/\W+/g, '-')}`;
+const allowed = (item) =>
+    Boolean(session.user) && (!item.admin || isAdmin()) && (!item.monitor || canMonitor()) && (!item.own || Boolean(session.user.id)) && (!item.when || item.when());
 const currentRoute = () => location.hash.match(/^#\/([^/]*)\/?(.*)$/) || [null, '', ''];
 
 function markActive() {
@@ -34,13 +50,56 @@ function markActive() {
     if (session.user) $(`#menu-${page}`).addClass('active').attr('aria-current', 'page');
 }
 
+///--- Menu
+
+// Opens or closes the drawer the menu is on a narrow screen
+function setMenuOpen(open, { focus = false } = {}) {
+    $('body').toggleClass('menu-open', open);
+    $('#menu_toggle').attr({ 'aria-expanded': String(open), 'aria-label': open ? 'Close the menu' : 'Open the menu' });
+    if (!focus) return;
+    if (open) $('#header_menu .menu-item.active span, #header_menu .menu-item span').first().trigger('focus');
+    else $('#menu_toggle').trigger('focus');
+}
+
+// The button of the header that opens the menu, and what closes it again
+function addMenuToggle() {
+    const bar = () => el('span', { class: 'menu-toggle-bar' });
+    $('#header').prepend(
+        el('button', { id: 'menu_toggle', type: 'button', 'aria-controls': 'header_menu_container', 'aria-expanded': 'false', 'aria-label': 'Open the menu' }, bar(), bar(), bar())
+            .on('click', () => setMenuOpen(!$('body').hasClass('menu-open'), { focus: true }))
+    );
+    $('#container').append(el('div', { id: 'menu_backdrop' }).on('click', () => setMenuOpen(false)));
+    $(document).on('keydown', (event) => {
+        if (event.key === 'Escape' && $('body').hasClass('menu-open') && !$('#myModal').is(':visible')) setMenuOpen(false, { focus: true });
+    });
+    // Wide enough for the sidebar again: nothing is left open behind it
+    window.matchMedia('(max-width: 999px)').addEventListener('change', () => setMenuOpen(false));
+}
+
 function buildMenu() {
+    const items = MENU.filter(allowed);
     menuItems.headerMenu.length = 0;
-    for (const item of MENU.filter(allowed)) {
-        menuItems.headerMenu.push({ id: `menu-${item.route || 'signout'}`, class: 'menu-item', text: '', inner_text: item.label });
+    for (const item of items) {
+        menuItems.headerMenu.push({ id: itemId(item), class: 'menu-item', text: '', inner_text: item.label });
     }
     clearHeaderMenu();
     generateHeaderMenu();
+    $('body').toggleClass('signed-in', Boolean(session.user));
+    $('#header_menu_container').attr({ role: 'navigation', 'aria-label': 'Menu' });
+
+    // The name of a group stands before its first item; the last group is the signed-in user
+    const who = session.user ? session.user.displayName || session.user.username : '';
+    items.forEach((item, index) => {
+        if (!item.group || item.group === items[index - 1]?.group) return;
+        const $title = item.group === 'You'
+            ? el('li', { class: 'menu-group menu-user', role: 'presentation' }, el('strong', { text: who }), el('small', { text: session.user.role }))
+            : el('li', { class: 'menu-group', role: 'presentation', text: item.group });
+        $(`#${itemId(item)}`).before($title);
+    });
+    // Without accounts there is nothing below the name: it stands at the end by itself
+    if (session.user && !session.user.id) {
+        $('#header_menu').append(el('li', { class: 'menu-group menu-user', role: 'presentation' }, el('strong', { text: who }), el('small', { text: session.user.role })));
+    }
 
     // The items of Athena UI are clicked; make them reachable with the keyboard as well
     $('#header_menu .menu-item span')
@@ -52,15 +111,6 @@ function buildMenu() {
             }
         });
 
-    if (session.user) {
-        const who = `${session.user.displayName || session.user.username} · ${session.user.role}`;
-        // The way to the own account, for the users that have one
-        $('#header_menu_container').append(
-            session.user.id
-                ? el('a', { id: 'session_user', href: '#/account', title: 'Your account', text: who })
-                : el('span', { id: 'session_user', text: who })
-        );
-    }
     showFooter();
     markActive();
 }
@@ -84,6 +134,7 @@ function showFooter() {
 function nav(label) {
     const item = MENU.find((candidate) => candidate.label === label);
     if (!item) return; // Athena UI also calls it, without a label, while it builds the page
+    setMenuOpen(false);
     if (item.action) return item.action();
     go(`#/${item.route}`);
 }
@@ -95,13 +146,21 @@ function go(hash) {
 
 let renders = 0;
 
+// The addresses of the pages before 2.3.0
+const MOVED = { blocklists: 'blocking' };
+
 async function route() {
     closeDialog();
+    setMenuOpen(false);
     // Errors stay until they are dismissed; the other notices belong to the page that is left
     $('#notices .notice:not(.error)').remove();
     if (!session.user) return showLogin();
 
     const [, page, id] = currentRoute();
+    if (MOVED[page]) {
+        location.replace(`#/${MOVED[page]}`);
+        return;
+    }
     const item = MENU.find((candidate) => candidate.route === page && allowed(candidate));
     if (!item) {
         location.replace('#/dashboard');
@@ -110,6 +169,7 @@ async function route() {
 
     markActive();
     clearWrapper();
+    window.scrollTo(0, 0);
     const render = ++renders;
     const $page = el('div', { class: 'page' });
     $('#wrapper').append($page);
@@ -218,6 +278,7 @@ async function start() {
     });
 
     $('#wrapper').before(el('div', { id: 'notices', 'aria-live': 'polite' }));
+    addMenuToggle();
     events.userChanged = buildMenu;
     events.signedOut = signedOut;
     onSessionEnd(() => {

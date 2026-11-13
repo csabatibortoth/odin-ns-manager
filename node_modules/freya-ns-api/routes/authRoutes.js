@@ -5,6 +5,7 @@ const userService = require('../services/userService/userService');
 
 const router = express.Router();
 
+// The only endpoint of the API that can be used without signing in.
 router.post('/login', async (req, res) => {
     res.json(await authService.authentication(req.body));
 });

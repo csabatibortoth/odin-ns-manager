@@ -1,15 +1,14 @@
 const express = require('express');
 
 const config = require('../config/config');
-const { authenticate, requireRole } = require('../services/authService/authService');
+const { requireRole } = require('../services/authService/authService');
 const recordService = require('../services/dnsService/recordService');
 const zoneService = require('../services/dnsService/zoneService');
 
+// Signing in is enforced for the whole API in app.js.
 const router = express.Router();
 // Every signed-in user may read the zones and records; only these roles may change them.
 const canWrite = requireRole(...config.dnsWriteRoles);
-
-router.use(authenticate);
 
 router.get('/', async (req, res) => {
     res.json(await zoneService.listZones(req.query));

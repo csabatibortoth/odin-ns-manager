@@ -20,6 +20,10 @@ export const events = {
 export const isAdmin = () => session.user?.role === 'admin';
 // May the user change zones and records? The server decides; this is for what is offered.
 export const canWriteDns = () => Boolean(session.info?.dnsWriteRoles?.includes(session.user?.role));
+// May the user read the query log, the clients and the metrics?
+export const canMonitor = () => Boolean((session.info?.monitoringRoles || ['admin']).includes(session.user?.role));
+// For what is not JSON, such as a download: the header that signs a request
+export const authHeader = () => (token ? { Authorization: `Bearer ${token}` } : {});
 
 export class ApiError extends Error {
     constructor(status, message, details) {

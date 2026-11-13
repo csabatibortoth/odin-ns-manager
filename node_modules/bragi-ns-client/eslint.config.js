@@ -76,6 +76,13 @@ module.exports = [
         }
     },
     {
+        // DNS wire format and DNSSEC hashes are bit level work
+        files: ['src/dnssec/**', 'tests/Unit/dnssec/**', 'tests/dnssecWorld.js'],
+        rules: {
+            'no-bitwise': 'off'
+        }
+    },
+    {
         files:           ['tests/**'],
         languageOptions: {
             globals: globals.mocha

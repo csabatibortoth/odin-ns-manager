@@ -1,5 +1,15 @@
 # Changelog
 
+### 2.1.0
+
+FEATURES:
+
+- DNSSEC support. `createLookup({dnssec: 'validate'})` verifies the signatures of the answers by itself, up to the
+root keys. `createLookup({dnssec: 'trust-ad'})` trusts the validation done by the DNS server. See the README
+- `createLookup(options)` makes a `lookup` function with its own cache and settings
+- With DNSSEC `{all: true}` results have the `secure` field, and the `requireSecure` option rejects the hosts that
+are not protected
+
 ### 2.0.0
 
 BREAKING CHANGES:

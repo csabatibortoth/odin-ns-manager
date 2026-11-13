@@ -16,6 +16,8 @@ const env = process.env;
 const SETTINGS_FILE = path.resolve(__dirname, '..', env.ODIN_SETTINGS_FILE || 'config/settings.json');
 
 const ROLES = ['admin', 'user'];
+const rolesCheck = (value) => (value.length > 0 && value.every((role) => ROLES.includes(role))) || `must be one or more of: ${ROLES.join(', ')}`;
+const HOST_NAME = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/i;
 const TRUE_WORDS = ['1', 'true', 'yes', 'on'];
 
 const isUpstream = (value) => {
@@ -70,15 +72,37 @@ const SETTINGS = [
         group: 'Forwarding', key: 'nsNegativeCacheTtl', env: 'ODIN_NS_NEGATIVE_CACHE_TTL', type: 'int', fallback: 30, label: 'Keep "no such name" answers for (seconds)',
         live: true, min: 1, max: 86400,
     },
-
-    { group: 'Blocking', key: 'nsBlockingEnabled', env: 'ODIN_NS_BLOCKING_ENABLED', type: 'bool', fallback: true, label: 'Block the names of the blocklists', live: true },
     {
-        group: 'Blocking', key: 'nsBlockMode', env: 'ODIN_NS_BLOCK_MODE', type: 'string', fallback: 'null', label: 'Answer for a blocked name', live: true,
-        options: [{ value: 'null', text: 'The address 0.0.0.0' }, { value: 'nxdomain', text: 'No such name' }],
+        group: 'Forwarding', key: 'nsDnssec', env: 'ODIN_NS_DNSSEC', type: 'string', fallback: 'off', label: 'DNSSEC for forwarded addresses', live: true,
+        hint: 'Checks the A and AAAA answers of the upstream with bragi-ns-client. A forged answer of a signed domain is refused; the domains that are not signed work as before.',
+        options: [
+            { value: 'off', text: 'Off' },
+            { value: 'validate', text: 'Validate the signatures here' },
+            { value: 'trust-ad', text: 'Trust the validation of the upstream' },
+        ],
+    },
+
+    {
+        group: 'Blocking', key: 'nsBlocklistRefresh', env: 'ODIN_NS_BLOCKLIST_REFRESH', type: 'int', fallback: 24, label: 'Download the block lists every (hours)',
+        live: true, min: 1, max: 720,
+        hint: 'The switch of the blocking and the answer for a blocked name are on the Blocking page.',
+    },
+
+    {
+        group: 'Monitoring', key: 'nsQueryLogEnabled', env: 'ODIN_NS_QUERY_LOG_ENABLED', type: 'bool', fallback: true, label: 'Record the queries', live: true,
+        hint: 'The query log, the clients and the hourly metrics. It shows what every client looks up.',
     },
     {
-        group: 'Blocking', key: 'nsBlocklistRefresh', env: 'ODIN_NS_BLOCKLIST_REFRESH', type: 'int', fallback: 24, label: 'Download the lists every (hours)',
-        live: true, min: 1, max: 720,
+        group: 'Monitoring', key: 'queryLogRetentionDays', env: 'ODIN_QUERY_LOG_RETENTION_DAYS', type: 'int', fallback: 30, label: 'Keep the queries for (days)', min: 0, max: 3650,
+        hint: '0: the queries are counted in the metrics and the clients, but not stored.',
+    },
+    {
+        group: 'Monitoring', key: 'metricsRetentionDays', env: 'ODIN_METRICS_RETENTION_DAYS', type: 'int', fallback: 365, label: 'Keep the hourly metrics for (days)', min: 0, max: 36500,
+        hint: '0: forever.',
+    },
+    {
+        group: 'Monitoring', key: 'monitoringRoles', env: 'ODIN_MONITORING_ROLES', type: 'list', fallback: ['admin'], label: 'Roles that may read the monitoring',
+        hint: `Comma separated: ${ROLES.join(', ')}.`, check: rolesCheck,
     },
 
     { group: 'Management API', key: 'apiEnabled', env: 'ODIN_API_ENABLED', type: 'bool', fallback: true, label: 'Management API', editable: false },
@@ -87,7 +111,7 @@ const SETTINGS = [
     { group: 'Management API', key: 'httpServerPort', env: 'ODIN_HTTP_PORT', type: 'int', fallback: 45451, label: 'HTTP port', min: 1, max: 65535 },
     {
         group: 'Management API', key: 'httpsEnabled', env: 'ODIN_HTTPS_ENABLED', type: 'bool', fallback: false, label: 'HTTPS listener',
-        hint: 'Takes the place of HTTP, and needs the key and the certificate of freya-ns-api.',
+        hint: 'Takes the place of HTTP, and needs a certificate: see the HTTPS certificate settings.',
     },
     { group: 'Management API', key: 'httpsServerPort', env: 'ODIN_HTTPS_PORT', type: 'int', fallback: 45452, label: 'HTTPS port', min: 1, max: 65535 },
     {
@@ -95,9 +119,38 @@ const SETTINGS = [
         hint: 'Without it everybody who reaches the API is an admin. For local development only.',
     },
     {
-        group: 'Management API', key: 'dnsWriteRoles', env: 'ODIN_DNS_WRITE_ROLES', type: 'list', fallback: ['admin'], label: 'Roles that may change zones and records',
+        group: 'Management API', key: 'dnsWriteRoles', env: 'ODIN_DNS_WRITE_ROLES', type: 'list', fallback: ['admin'], label: 'Roles that may change zones, records and the blocking',
         hint: `Comma separated: ${ROLES.join(', ')}. Every signed-in user may read them.`,
-        check: (value) => (value.length > 0 && value.every((role) => ROLES.includes(role))) || `must be one or more of: ${ROLES.join(', ')}`,
+        check: rolesCheck,
+    },
+    { group: 'Management API', key: 'docsEnabled', env: 'ODIN_DOCS_ENABLED', type: 'bool', fallback: true, label: 'Swagger UI at /api/docs' },
+
+    {
+        group: 'HTTPS certificate', key: 'httpsCertSource', env: 'ODIN_HTTPS_CERT_SOURCE', type: 'string', fallback: 'custom', label: 'Certificate from',
+        options: [{ value: 'custom', text: 'Files of your own' }, { value: 'letsencrypt', text: "Let's Encrypt" }],
+        hint: "Let's Encrypt needs the public names below, and port 80 of them reaching this server.",
+    },
+    {
+        group: 'HTTPS certificate', key: 'httpsDomains', env: 'ODIN_HTTPS_DOMAINS', type: 'list', fallback: [], label: "Let's Encrypt: public names of this server",
+        hint: 'Comma separated, e.g. dns.example.com. No wildcards, no IP addresses.',
+        check: (value) => value.every((name) => HOST_NAME.test(name)) || 'must be full public host names',
+    },
+    { group: 'HTTPS certificate', key: 'acmeEmail', env: 'ODIN_ACME_EMAIL', type: 'string', fallback: '', label: "Let's Encrypt: e-mail of the account", empty: true, max: 254 },
+    {
+        group: 'HTTPS certificate', key: 'acmeDirectory', env: 'ODIN_ACME_DIRECTORY', type: 'string', fallback: 'production', label: "Let's Encrypt: directory", max: 500,
+        hint: 'production, staging (for trying it out), or the directory URL of another ACME certificate authority.',
+        check: (value) => ['production', 'staging'].includes(value) || /^https?:\/\/\S+$/.test(value) || 'must be production, staging or a URL',
+    },
+    {
+        group: 'HTTPS certificate', key: 'acmeHttpPort', env: 'ODIN_ACME_HTTP_PORT', type: 'int', fallback: 80, label: "Let's Encrypt: port that answers the challenge", min: 1, max: 65535,
+        hint: 'The authority always connects to port 80 of the name: change it only when that port is forwarded to another one.',
+    },
+    { group: 'HTTPS certificate', key: 'acmeFolder', env: 'ODIN_ACME_FOLDER', type: 'string', fallback: 'sslcert/letsencrypt', label: "Let's Encrypt: folder of the keys", editable: false },
+    { group: 'HTTPS certificate', key: 'httpsKeyFile', env: 'ODIN_HTTPS_KEY', type: 'string', fallback: 'sslcert/server.key', label: 'Own certificate: private key file', editable: false },
+    { group: 'HTTPS certificate', key: 'httpsCertFile', env: 'ODIN_HTTPS_CERT', type: 'string', fallback: 'sslcert/server.crt', label: 'Own certificate: certificate file', editable: false },
+    {
+        group: 'HTTPS certificate', key: 'httpsKeyPassphrase', env: 'ODIN_HTTPS_KEY_PASSPHRASE', type: 'string', fallback: '', label: 'Own certificate: passphrase of the key',
+        editable: false, secret: true, empty: true,
     },
 
     { group: 'Database', key: 'modelServerAddress', env: 'ODIN_DB_ADDRESS', type: 'string', fallback: '127.0.0.1', label: 'MongoDB address', editable: false },
@@ -108,6 +161,11 @@ const SETTINGS = [
 ];
 
 const BY_KEY = new Map(SETTINGS.map((setting) => [setting.key, setting]));
+
+// Settings of the releases before 2.3.0 that now live in the database, with the blocking of freya-ns-api.
+// What was set for them is read once more, to be carried over: see services/apiService/migration.js.
+const LEGACY = { nsBlockingEnabled: 'ODIN_NS_BLOCKING_ENABLED', nsBlockMode: 'ODIN_NS_BLOCK_MODE' };
+const legacy = {};
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 ///--- Reading
@@ -118,7 +176,8 @@ function fromEnv(setting) {
     if (raw === undefined) return undefined;
     if (setting.type === 'bool') return TRUE_WORDS.includes(raw.toLowerCase());
     if (setting.type === 'list') return raw.split(',').map((item) => item.trim()).filter(Boolean);
-    if (setting.type === 'int') return Number(raw) || undefined;
+    // 0 is a value of its own
+    if (setting.type === 'int') return raw.trim() !== '' && Number.isInteger(Number(raw)) ? Number(raw) : undefined;
     return raw || setting.empty ? raw : undefined;
 }
 
@@ -165,6 +224,10 @@ function readStored() {
 
     const stored = {};
     for (const [key, value] of Object.entries(saved && typeof saved === 'object' ? saved : {})) {
+        if (key in LEGACY) {
+            legacy[key] = value;
+            continue;
+        }
         const setting = BY_KEY.get(key);
         try {
             if (!setting || setting.editable === false) throw new Error('can not be set here');
@@ -177,6 +240,8 @@ function readStored() {
 }
 
 let stored = readStored();
+if (env[LEGACY.nsBlockingEnabled] !== undefined) legacy.nsBlockingEnabled = TRUE_WORDS.includes(env[LEGACY.nsBlockingEnabled].toLowerCase());
+if (env[LEGACY.nsBlockMode] !== undefined) legacy.nsBlockMode = env[LEGACY.nsBlockMode];
 
 // The value a setting has when the server starts now. A value of the
 // environment that is not one of the options of the setting is not used.
@@ -299,6 +364,8 @@ Object.defineProperties(config, {
     update: { value: update },
     onChange: { value: onChange },
     settingsFile: { value: SETTINGS_FILE },
+    // { nsBlockingEnabled?, nsBlockMode? } - what was set before the blocking moved to the database
+    legacy: { value: legacy },
 });
 
 module.exports = config;
