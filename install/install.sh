@@ -57,6 +57,8 @@ RESOLVED_DROPIN=/etc/systemd/resolved.conf.d/$NAME.conf
 UNIT_FILE=/etc/systemd/system/$NAME.service
 RC_FILE=/etc/init.d/$NAME
 
+CURRENT_STEP=
+REPORTED=0
 ASSUME_YES=0
 PURGE=0
 REF=
@@ -66,9 +68,33 @@ COMMAND=
 ###--- Talking to the person who installs
 
 say() { printf '%s\n' "$*"; }
-step() { printf '\n==> %s\n' "$*"; }
+step() { CURRENT_STEP=$*; printf '\n==> %s\n' "$*"; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; }
-die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+die() { REPORTED=1; printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+# Runs a command without showing what it prints - unless it fails: then all of it is shown
+quiet() {
+    q_code=0
+    q_output=$("$@" 2>&1) || q_code=$?
+    if [ "$q_code" != 0 ]; then
+        printf 'ERROR: this command failed (exit code %s): %s\n' "$q_code" "$*" >&2
+        [ -z "$q_output" ] || printf '%s\n' "$q_output" | sed 's/^/    /' >&2
+        REPORTED=1
+    fi
+    return "$q_code"
+}
+
+# The script stops at the first command that fails. Said here, so that it never stops without a word.
+on_exit() {
+    e_code=$?
+    stty echo <&3 2>/dev/null || true
+    if [ "$e_code" != 0 ] && [ "$e_code" != 130 ]; then
+        printf '\n' >&2
+        [ "$REPORTED" = 1 ] || printf 'ERROR: the installer stopped at a command that failed (exit code %s).\n' "$e_code" >&2
+        printf 'Stopped during: %s. What was done so far is kept, and the installer can be run again.\n' "${CURRENT_STEP:-the start}" >&2
+        printf 'To see every command it runs: sh -x %s %s\n' "$0" "$COMMAND" >&2
+    fi
+}
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # The answers are read from the terminal, also when the script itself is piped in
@@ -221,10 +247,10 @@ APT_UPDATED=0
 pkg() {
     case $FAMILY in
         debian)
-            if [ "$APT_UPDATED" = 0 ]; then apt-get update -qq; APT_UPDATED=1; fi
-            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@" >/dev/null ;;
-        rhel) "$DNF" install -y -q "$@" >/dev/null ;;
-        alpine) apk add --quiet "$@" ;;
+            if [ "$APT_UPDATED" = 0 ]; then quiet apt-get update; APT_UPDATED=1; fi
+            DEBIAN_FRONTEND=noninteractive quiet apt-get install -y "$@" ;;
+        rhel) quiet "$DNF" install -y "$@" ;;
+        alpine) quiet apk add "$@" ;;
     esac
 }
 
@@ -278,10 +304,10 @@ install_node() {
             case $ARCH in
                 armv7l) install_node_tarball armv7l ;;
                 armv6l) die "Node.js $MIN_NODE does not run on ARMv6 (Raspberry Pi 1 and Zero)." ;;
-                *) need bash; curl -fsSL "https://deb.nodesource.com/setup_$NODE_MAJOR.x" | bash - >/dev/null; APT_UPDATED=1; pkg nodejs ;;
+                *) need bash; quiet sh -c "curl -fsSL https://deb.nodesource.com/setup_$NODE_MAJOR.x | bash -"; APT_UPDATED=1; pkg nodejs ;;
             esac ;;
         rhel)
-            need bash; curl -fsSL "https://rpm.nodesource.com/setup_$NODE_MAJOR.x" | bash - >/dev/null; pkg nodejs ;;
+            need bash; quiet sh -c "curl -fsSL https://rpm.nodesource.com/setup_$NODE_MAJOR.x | bash -"; pkg nodejs ;;
     esac
     node_ok || die "Node.js $MIN_NODE or newer could not be installed."
     state_set NODE_INSTALLED 1
@@ -326,6 +352,13 @@ fetch_app() {
     if [ ! -d "$APP_DIR/node_modules/express" ]; then
         say "Installing the packages ..."
         (cd "$APP_DIR" && npm install --omit=dev --no-audit --no-fund --silent)
+    fi
+    # What the server is built on has to load here: a package that came incomplete, or with the names of
+    # its files in another case than this system wants them, is installed again from the registry
+    if ! (cd "$APP_DIR" && node -e 'for (const name of ["express", "mongoose", "njord-ns-server", "freya-ns-api/package.json", "bragi-ns-client"]) require(name)') >/dev/null 2>&1; then
+        say "The packages that came with the program do not load on this system: installing them again ..."
+        rm -rf "$APP_DIR/node_modules"
+        (cd "$APP_DIR" && quiet npm ci --omit=dev --no-audit --no-fund) || die "The packages could not be installed."
     fi
     # The service does not own the folder, and can not ask git for the build itself
     rm -f "$APP_DIR/build.json"
@@ -535,7 +568,7 @@ gpgkey=https://pgp.mongodb.com/server-$MONGO_VERSION.asc
 EOF
     fi
     pkg mongodb-org
-    systemctl enable --now mongod >/dev/null 2>&1
+    quiet systemctl enable --now mongod
     state_set MONGO local
 }
 
@@ -547,7 +580,7 @@ install_mongo_docker() {
         fi
         state_set DOCKER_INSTALLED 1
     fi
-    if [ "$INIT" = systemd ]; then systemctl enable --now docker >/dev/null 2>&1
+    if [ "$INIT" = systemd ]; then quiet systemctl enable --now docker
     elif [ "$INIT" = openrc ]; then rc-update add docker default >/dev/null 2>&1 || true; rc-service docker start >/dev/null 2>&1 || true
     fi
     d_wait=0
@@ -562,10 +595,10 @@ install_mongo_docker() {
         say "This processor does not run MongoDB 5 or newer (no AVX, or older than ARMv8.2): MongoDB $d_tag is used."
     fi
     if docker inspect "$CONTAINER" >/dev/null 2>&1; then
-        docker start "$CONTAINER" >/dev/null
+        quiet docker start "$CONTAINER"
     else
         say "Starting MongoDB $d_tag in the container $CONTAINER ..."
-        docker volume create "$VOLUME" >/dev/null
+        quiet docker volume create "$VOLUME"
         docker run -d --name "$CONTAINER" --restart unless-stopped -p 127.0.0.1:27017:27017 -v "$VOLUME:/data/db" "mongo:$d_tag" >/dev/null
     fi
     state_set MONGO docker
@@ -649,7 +682,7 @@ firewall() {
     if have ufw && ufw status 2>/dev/null | grep -q '^Status: active'; then
         step "Firewall"
         if ask_yes "Open port $f_dns (DNS) and $f_port (user interface) in ufw?" y; then
-            ufw allow "$f_dns" >/dev/null; ufw allow "$f_port/tcp" >/dev/null
+            quiet ufw allow "$f_dns"; quiet ufw allow "$f_port/tcp"
             state_set FIREWALL "ufw $f_dns $f_port"
         fi
     elif have firewall-cmd && firewall-cmd --state >/dev/null 2>&1; then
@@ -711,8 +744,8 @@ ReadWritePaths=$DATA_DIR $LOG_DIR
 [Install]
 WantedBy=multi-user.target
 EOF
-            systemctl daemon-reload
-            systemctl enable "$NAME" >/dev/null 2>&1 ;;
+            quiet systemctl daemon-reload
+            quiet systemctl enable "$NAME" || die "The service could not be enabled; the reason is above. Its unit is $UNIT_FILE" ;;
         openrc)
             cat > "$RC_FILE" <<EOF
 #!/sbin/openrc-run
@@ -738,7 +771,7 @@ depend() {
 EOF
             chmod 755 "$RC_FILE"
             : >> "$LOG_DIR/console.log"; own "$SERVICE_USER:$SERVICE_USER" "$LOG_DIR/console.log"
-            rc-update add "$NAME" default >/dev/null 2>&1 ;;
+            quiet rc-update add "$NAME" default || die "The service could not be added to the default runlevel; the reason is above." ;;
         *) die "Neither systemd nor OpenRC runs on this system: the service can not be installed." ;;
     esac
     say "The service $NAME is installed, and starts with the system."
@@ -754,7 +787,7 @@ service_do() {
 
 start_service() {
     step "Starting"
-    if service_installed; then service_do restart >/dev/null 2>&1 || service_do start; fi
+    if service_installed; then quiet service_do restart || warn "The service could not be started; the reason is above."; fi
     s_port=$(web_port)
     say "Waiting for the user interface on port $s_port ..."
     if wait_port 127.0.0.1 "$s_port" "$WAIT"; then
@@ -953,7 +986,7 @@ while [ $# -gt 0 ]; do
 done
 
 open_terminal
-trap 'stty echo <&3 2>/dev/null || true' EXIT
+trap on_exit EXIT
 trap 'printf "\nStopped.\n"; exit 130' INT
 
 if [ -z "$COMMAND" ]; then
