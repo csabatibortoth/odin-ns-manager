@@ -211,15 +211,25 @@ primary_address() {
 
 ###--- The system
 
+# One field of the os-release file. It is read in a subshell: the file sets NAME, VERSION and ID,
+# which must not replace the variables of this script (NAME is the name of the service)
+os_field() {
+    (
+        unset "$1"
+        # shellcheck disable=SC1090
+        . "$OS_RELEASE" >/dev/null 2>&1
+        eval "printf '%s' \"\${$1:-}\""
+    )
+}
+
 detect_system() {
     OS_RELEASE=${ODIN_OS_RELEASE:-/etc/os-release}
     [ -r "$OS_RELEASE" ] || die "This system is not recognised: $OS_RELEASE is missing."
-    # shellcheck disable=SC1090
-    . "$OS_RELEASE"
-    OS_ID=${ID:-unknown}
-    OS_LIKE=${ID_LIKE:-}
-    OS_VERSION=${VERSION_ID:-}
-    OS_CODENAME=${VERSION_CODENAME:-}
+    OS_ID=$(os_field ID); OS_ID=${OS_ID:-unknown}
+    OS_LIKE=$(os_field ID_LIKE)
+    OS_VERSION=$(os_field VERSION_ID)
+    OS_CODENAME=$(os_field VERSION_CODENAME)
+    PRETTY_NAME=$(os_field PRETTY_NAME)
     ARCH=$(uname -m)
 
     case " $OS_ID $OS_LIKE " in
