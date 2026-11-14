@@ -500,12 +500,25 @@ web_address() {
     printf '%s://%s:%s' "$w_scheme" "$w_host" "$(web_port)"
 }
 
-# The first account. It is only made by the server when the database has no users yet.
+# How many accounts the database has; nothing when it can not be asked
+db_users() { (cd "$APP_DIR" && node install/users.js "$ENV_FILE") 2>/dev/null || true; }
+
+# The first account. It is only made by the server when the database has no users yet, so that is
+# what decides whether it is asked for - not whether an earlier run asked: that run may have stopped
+# before the first start, or its database may be gone
 admin_account() {
-    [ -z "$(state_get ADMIN_ASKED)" ] || return 0
     step "The admin account"
-    say "It is created at the first start, when the database has no users yet."
-    ask ADMIN_USER "Username" "${FREYA_ADMIN_USER:-admin}"
+    a_users=$(db_users)
+    if [ -n "$a_users" ] && [ "$a_users" != 0 ]; then
+        say "The database has accounts already ($a_users): no new one is made. Sign in with one of them."
+        kv_del "$ENV_FILE" FREYA_ADMIN_PWD
+        return 0
+    fi
+    if [ -n "$a_users" ]; then say "The database has no users yet: this account is created when the service starts."
+    else say "It is created when the service starts, if the database has no users yet."
+    fi
+    a_user=$(kv_get "$ENV_FILE" FREYA_ADMIN_USER)
+    ask ADMIN_USER "Username" "${FREYA_ADMIN_USER:-${a_user:-admin}}"
     ADMIN_PASSWORD=${FREYA_ADMIN_PWD:-}
     while [ "$ASSUME_YES" = 0 ]; do
         ask_secret ADMIN_PASSWORD "Password, 8 characters or more (empty: one is made for you)"
@@ -519,7 +532,6 @@ admin_account() {
     if [ -z "$ADMIN_PASSWORD" ]; then ADMIN_PASSWORD=$(random_hex 9); ADMIN_GENERATED=1; fi
     kv_set "$ENV_FILE" FREYA_ADMIN_USER "$ADMIN_USER"
     kv_set "$ENV_FILE" FREYA_ADMIN_PWD "$ADMIN_PASSWORD"
-    state_set ADMIN_ASKED 1
 }
 
 ###--- MongoDB
@@ -807,8 +819,15 @@ start_service() {
         STARTED=0
         warn "The user interface does not answer on port $s_port yet. Look at the log: $(log_hint)"
     fi
-    # The password of the first account is only read at the first start: it does not stay in the file
-    if [ "$STARTED" = 1 ] && [ -n "$(kv_get "$ENV_FILE" FREYA_ADMIN_PWD)" ]; then kv_del "$ENV_FILE" FREYA_ADMIN_PWD; fi
+    # The password of the first account is only read when the account is made: it does not stay in
+    # the file after that. Until the account is there it is kept, as the server makes a password of
+    # its own otherwise, which is only printed to the log
+    if [ -n "$(kv_get "$ENV_FILE" FREYA_ADMIN_PWD)" ]; then
+        s_users=$(db_users)
+        if [ -n "$s_users" ] && [ "$s_users" != 0 ]; then kv_del "$ENV_FILE" FREYA_ADMIN_PWD
+        else warn "The admin account is not made yet: its password stays in $ENV_FILE until the service has started with its database."
+        fi
+    fi
 }
 
 log_hint() {
