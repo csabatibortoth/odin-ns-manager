@@ -4,7 +4,7 @@
 
 /* global $, HTMLControlGenerator */
 
-import { openModal, closeModal } from '../vendor/athena-ui/athena-ui.js';
+import { openModal, closeModal, showToast, showDialog as athenaDialog } from '../vendor/athena-ui/athena-ui.js';
 
 const MODAL_ID = 'myModal';
 
@@ -85,16 +85,17 @@ export function errorText(err) {
 
 ///--- Notices
 
+// kind: 'ok', 'info' or 'error'. A failure stays until it is dismissed; the others go away by themselves.
+const TOAST_TYPES = { ok: 'success', info: 'warning', error: 'error' };
+let errorToast = null;
+
 export function notice(kind, text) {
-    const $notice = el('div', { class: `notice ${kind}`, role: kind === 'error' ? 'alert' : 'status' }, el('span', { text }));
-    $notice.append(
-        el('button', { class: 'notice-close', type: 'button', 'aria-label': 'Dismiss', text: '×' }).on('click', () => $notice.remove())
-    );
-    $('#notices').empty().append($notice);
-    if (kind !== 'error') setTimeout(() => $notice.remove(), 6000);
+    if (kind === 'error') errorToast?.close(); // one failure at a time
+    const toast = showToast({ message: text, type: TOAST_TYPES[kind] || 'info', duration: kind === 'error' ? 0 : 6000 });
+    if (kind === 'error') errorToast = toast;
 }
 
-export const clearNotices = () => $('#notices').empty();
+export const clearNotices = () => $('.toast-container').empty();
 
 // An expired session is reported once, by the handler of the session
 export function showError(err) {
@@ -334,27 +335,30 @@ export function formDialog({ title, ...form }) {
 // A form on the page; see buildForm
 export const inlineForm = (form) => buildForm(form);
 
-// Asks before something that can not be undone
+// Asks before something that can not be undone. The dialog stays open, with
+// the failure in it, while onConfirm fails.
 export function confirmDialog({ title, message, confirmLabel = 'Delete', onConfirm }) {
     const $error = el('p', { class: 'form-error', role: 'alert' }).hide();
-    const $confirm = control({
-        inputType: 'button',
-        value: confirmLabel,
-        class: 'button danger',
-        onclick: async () => {
-            $confirm.prop('disabled', true);
+    return athenaDialog({
+        title,
+        content: [el('p', { text: message })[0], $error[0]],
+        buttons: [
+            { text: 'Cancel', value: false, variant: 'secondary' },
+            { text: confirmLabel, value: true, variant: 'danger', autofocus: true },
+        ],
+        beforeClose: async (value) => {
+            if (value !== true) return true;
+            $error.hide();
             try {
                 await onConfirm();
-                closeDialog();
+                return true;
             } catch (err) {
-                if (err?.status === 401) closeDialog();
-                else $error.text(errorText(err)).show();
-            } finally {
-                $confirm.prop('disabled', false);
+                if (err?.status === 401) return true;
+                $error.text(errorText(err)).show();
+                return false;
             }
         },
     });
-    showDialog(title, el('div', { class: 'form' }, $error, el('p', { text: message }), el('div', { class: 'actions' }, $confirm, button('Cancel', closeDialog))));
 }
 
 // A failure of the form itself, shown at the field: throw fieldError('name', 'message')

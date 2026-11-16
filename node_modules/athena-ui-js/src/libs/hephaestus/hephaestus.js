@@ -39,15 +39,22 @@ export function resolveTheme(selected) {
 }
 
 // Resolves once the stylesheet is applied, so the layout never renders unstyled.
+// A theme loaded earlier is removed once the new one is applied, so it can be switched at runtime.
 export function loadTheme(selected) {
     const theme = resolveTheme(selected);
+    const previous = [...document.querySelectorAll("link[data-athena-theme]")];
     return new Promise(resolve => {
         const link = document.createElement("link");
         link.rel = "stylesheet";
         link.href = theme.href;
-        link.onload = () => resolve(theme);
+        link.dataset.athenaTheme = String(theme.id ?? "custom");
+        link.onload = () => {
+            previous.forEach(old => old.remove());
+            resolve(theme);
+        };
         link.onerror = () => {
             console.warn(`Athena UI: failed to load theme ${theme.name ?? theme.href}`);
+            if (previous.length) link.remove();
             resolve(theme);
         };
         document.head.append(link);

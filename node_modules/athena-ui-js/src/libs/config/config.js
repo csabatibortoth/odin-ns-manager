@@ -6,7 +6,7 @@
 export const BORDERED_CLASS = "default-cointainer-bordered";
 
 export const defaults = Object.freeze({
-    version: "0.4.1",
+    version: "1.0.0",
     container_class: "container",
     header_class: "header-container",
     header_menu_class: "header-menu menu",
@@ -14,6 +14,9 @@ export const defaults = Object.freeze({
     footer_class: "footer-container",
     footer_menu_class: "footer-menu menu",
     loginForm_class: "login-form form",
+    registrationForm_class: "registration-form form",
+    lostPasswordForm_class: "lost-password-form form",
+    changePasswordForm_class: "change-password-form form",
 
     bordered: true,
     generateHeader: true,
@@ -22,11 +25,22 @@ export const defaults = Object.freeze({
     generateFooterContent: true,
     generateWrappercontent: true,
     login_enabled: false,
+    registration_enabled: false,
+    lost_password_enabled: false,
+    change_password_enabled: false,
+    login_remember_me: false,
     enable_encrypt_password: false,
 
     header_title_text: "Athena UI",
     header_img_url: undefined,
     copyright: "Here is the bottom Copyright Text for website",
+
+    // Language of the generated texts, see core/i18n.js
+    locale: "en",
+
+    // Cookie that keeps the session, and the lifetime (days) of a remembered session
+    session_cookie: "athena_session",
+    session_days: 7,
 
     // URL (relative to the page) of an extra classic script, loaded before the layout is generated
     customLoader: undefined

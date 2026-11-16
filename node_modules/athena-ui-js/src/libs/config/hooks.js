@@ -3,16 +3,16 @@
 //LICENCE: MIT
 //Repository: https://github.com/csabatibortoth/athena-ui
 
-/* global appConfig, menuItems, nav, login */
+/* global appConfig, menuItems, nav, login, register, lostPassword, changePassword */
 
 // Hooks can be passed to init({ nav, login, menuItems }). When they are not, the
-// page-level globals of the same name (appConfig, menuItems, nav, login) are used.
+// page-level globals of the same name (appConfig, menuItems, nav, login, register, lostPassword, changePassword) are used.
 // Globals are looked up on every call, so they may be defined after init().
 
 const hooks = {};
 
 export function setHooks(options = {}) {
-    for (const name of ["nav", "login", "menuItems"]) {
+    for (const name of ["nav", "login", "register", "lostPassword", "changePassword", "menuItems"]) {
         if (options[name] !== undefined) hooks[name] = options[name];
     }
 }
@@ -31,4 +31,16 @@ export function getNav() {
 
 export function getLogin() {
     return hooks.login ?? (typeof login === "function" ? login : undefined);
+}
+
+export function getRegister() {
+    return hooks.register ?? (typeof register === "function" ? register : undefined);
+}
+
+export function getLostPassword() {
+    return hooks.lostPassword ?? (typeof lostPassword === "function" ? lostPassword : undefined);
+}
+
+export function getChangePassword() {
+    return hooks.changePassword ?? (typeof changePassword === "function" ? changePassword : undefined);
 }

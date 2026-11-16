@@ -9,5 +9,11 @@ export default [
         name: "Default",
         href: new URL("default/style.css", import.meta.url).href,
         description: "Default Athena UI Theme"
+    },
+    {
+        id: 1,
+        name: "Dark",
+        href: new URL("dark/style.css", import.meta.url).href,
+        description: "Dark Athena UI Theme"
     }
 ];

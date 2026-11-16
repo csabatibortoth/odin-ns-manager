@@ -334,45 +334,113 @@ body.signed-in .header-container {
     font-weight: normal;
 }
 
-/* Notices */
+/* Toasts and dialogs of Athena UI: the notices and the questions */
 
-#notices {
-    width: 100%;
-    max-width: 1180px;
-    margin: 0 auto;
-    padding: 0 24px;
+.toast-container {
+    position: fixed;
+    top: calc(var(--header-h) + 12px);
+    right: 16px;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: min(380px, calc(100vw - 32px));
 }
 
-.notice {
+.toast {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-    margin-top: 16px;
     padding: 10px 14px;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--ok-bg);
     color: var(--ok);
+    box-shadow: 0 4px 14px rgb(0 0 0 / 18%);
 }
 
-.notice.error {
+.toast.alert-error {
     background: var(--danger-bg);
     color: var(--danger);
 }
 
-.notice.info {
+.toast.alert-warning,
+.toast.alert-info {
     background: var(--warn-bg);
     color: var(--warn);
 }
 
-.notice-close {
+.alert-close {
     border: 0;
     background: none;
     color: inherit;
     font-size: 1.1rem;
     line-height: 1;
     cursor: pointer;
+}
+
+.dialog-backdrop {
+    display: block;
+    z-index: 1000;
+}
+
+.dialog {
+    position: relative;
+}
+
+.dialog-close {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 1.6rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.dialog-title {
+    margin: 0 28px 12px 0;
+    font-size: 1.15rem;
+}
+
+.dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.athena-button {
+    padding: 7px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.athena-button:hover {
+    background: var(--surface-2);
+}
+
+.athena-button.button-primary {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-text);
+}
+
+.athena-button.button-danger {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+.athena-button:disabled {
+    opacity: 0.6;
+    cursor: default;
 }
 
 /* Controls */
@@ -1107,8 +1175,7 @@ input[type="file"].input {
         padding: 0 14px;
     }
 
-    .wrapper-container,
-    #notices {
+    .wrapper-container {
         padding-left: 14px;
         padding-right: 14px;
     }

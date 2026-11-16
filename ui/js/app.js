@@ -10,7 +10,7 @@
 
 import { init, clearWrapper, clearHeaderMenu, generateHeaderMenu, generateLoginForm } from '../vendor/athena-ui/athena-ui.js';
 import { api, session, events, setToken, hasToken, onSessionEnd, isAdmin, canMonitor } from './api.js';
-import { el, notice, closeDialog, errorText } from './ui.js';
+import { el, notice, clearNotices, closeDialog, errorText } from './ui.js';
 import * as pages from './pages.js';
 import { blocking } from './blocking.js';
 import { queries, clients } from './monitoring.js';
@@ -153,7 +153,7 @@ async function route() {
     closeDialog();
     setMenuOpen(false);
     // Errors stay until they are dismissed; the other notices belong to the page that is left
-    $('#notices .notice:not(.error)').remove();
+    $('.toast:not(.alert-error)').remove();
     if (!session.user) return showLogin();
 
     const [, page, id] = currentRoute();
@@ -215,7 +215,7 @@ async function login({ username, password }) {
         const result = await api('POST', '/auth/login', { body: { username: username.trim(), password }, quiet: true });
         setToken(result.token);
         session.user = result.user;
-        $('#notices').empty();
+        clearNotices();
         buildMenu();
         route(); // the page that was asked for before signing in
     } catch (err) {
