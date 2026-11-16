@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.3.0** - see the [release notes](#release-notes).
+Current version: **2.4.0** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -37,6 +37,9 @@ It brings four packages together:
 | Swagger UI of the API at `/api/docs` | Available |
 | Settings changed by the admins in the browser | Available |
 | Graphs of the queries, the answer time, the memory and the cache | Available |
+| Synchronization of several servers, secondaries copying from a primary | Available |
+| E-mail: notifications and lost password links | Available |
+| Plugins that extend the server | Available |
 | Zone transfers (AXFR) to secondary servers | Planned |
 | User interface in the browser | Available |
 
@@ -685,6 +688,45 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.4.0
+
+Several servers can be kept in step, the server can send e-mails, and plugins
+can extend it. Updates athena-ui-js to 1.0.0.
+
+#### Added
+
+- **Synchronization.** A secondary server copies the zones, records, blocking
+  and, if wanted, the users of a primary on a schedule, through its export and
+  import API. New Synchronization page. See [Synchronization](#synchronization).
+- **E-mail.** SMTP settings with a test e-mail, notifications to the admins
+  when the synchronization fails and when it works again, and lost password
+  links on the sign in page. See [E-mail](#e-mail).
+- **Plugins.** Folders in `plugins/` with their own API routes, pages in the
+  menu, jobs and events, and a Plugins page. `plugins/example` is a plugin to
+  start from. See [Plugins](#plugins) and [docs/plugins.md](docs/plugins.md).
+- Secret settings, such as the SMTP password, can be changed on the Settings
+  page; their values are never shown.
+
+#### Changed
+
+- athena-ui-js 0.4.1 → 1.0.0. The notices are its toasts, and the questions
+  before a delete are its dialogs.
+- New settings groups E-mail, Synchronization and Plugins; every setting has an
+  `ODIN_*` variable.
+
+#### Upgrading from 2.3.0
+
+- Run `npm install`. Nothing has to be changed: the new features are off until
+  they are set up.
+- A plugin runs with the rights of the server. Enable only plugins you trust.
+
+#### Not yet included
+
+- The synchronization is one way and never deletes: what is deleted on the
+  primary has to be deleted on the secondaries as well.
+- The lost password links are kept in memory, so a restart makes them invalid.
+- Zone transfers (AXFR) are refused, and responses have no authority section.
 
 ### 2.3.0
 
