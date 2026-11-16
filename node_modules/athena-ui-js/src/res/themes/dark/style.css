@@ -1,0 +1,31 @@
+/* Dark Athena UI Theme: the default theme with other colors */
+
+@import url("../default/style.css");
+
+:root {
+    color-scheme: dark;
+    --athena-bg: #16181d;
+    --athena-fg: #e6e8eb;
+    --athena-muted: #9aa3ad;
+    --athena-border: #3a3f47;
+    --athena-line: #3a3f47;
+    --athena-surface: #23272e;
+    --athena-surface-alt: #1c1f25;
+    --athena-hover: #2b3340;
+    --athena-overlay: rgb(0 0 0 / 65%);
+    --athena-accent: #5b9bd5;
+    --athena-accent-fg: #0b1118;
+    --athena-danger: #ef6b5e;
+    --athena-success: #4cc38a;
+    --athena-warning: #e0b04a;
+    --athena-info: #5b9bd5;
+    --athena-shadow: 0 4px 14px rgb(0 0 0 / 55%);
+}
+
+.button-danger,
+.badge-info,
+.badge-success,
+.badge-warning,
+.badge-error {
+    color: #0b1118;
+}

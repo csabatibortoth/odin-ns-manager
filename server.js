@@ -8,6 +8,8 @@ const queryLogService = require('./services/serverService/queryLogService');
 const searchService = require('./services/serverService/searchService');
 const statusService = require('./services/serverService/statusService');
 const zoneService = require('./services/serverService/zoneService');
+const syncService = require('./services/serverService/syncService');
+const pluginService = require('./services/pluginService/pluginService');
 
 const nameServer = named.createServer({ name: config.serverName });
 
@@ -93,9 +95,18 @@ async function main() {
                 onDnsChange: () => {
                     zoneService.refresh();
                     blockService.sync();
+                    pluginService.emit('dnsChange');
                 },
             });
             if (config.uiEnabled) console.log('User interface is at the address above');
+            const running = await pluginService.start();
+            if (config.pluginsEnabled.length) console.log('%d of %d plugin(s) are running', running, config.pluginsEnabled.length);
+            // A secondary copies what the primary has; the DNS server picks it up like any other change
+            syncService.start((result) => {
+                zoneService.refresh();
+                blockService.sync();
+                pluginService.emit('sync', result);
+            });
         } catch (err) {
             console.error('Management API failed to start:', err.message);
             logService.addErrorLogErrorEntry('Management API failed to start: ', err.stack || err);
@@ -111,6 +122,8 @@ async function main() {
         zoneService.stop();
         blockService.stop();
         statusService.stop();
+        syncService.stop();
+        await pluginService.stop().catch(() => {});
         await queryLogService.stop().catch(() => {});
         await stopApi().catch(() => {});
         process.exit(0);

@@ -935,6 +935,7 @@ export async function account($page) {
 const SOURCES = { environment: 'Environment', saved: 'Saved here', default: 'Default' };
 
 function settingText(setting, value) {
+    if (setting.secret) return el('span', { class: 'muted', text: setting.isSet ? 'set, not shown' : 'not set' });
     if (value === undefined) return el('span', { class: 'muted', text: 'not shown' });
     if (setting.type === 'bool') return value ? 'Yes' : 'No';
     if (setting.options) return setting.options.find((option) => option.value === value)?.text ?? String(value);
@@ -968,6 +969,7 @@ export async function settings($page) {
                         { class: 'toolbar page-head' },
                         el('h3', { text: group.title }),
                         el('span', { class: 'spacer' }),
+                        group.title === 'E-mail' ? button('Send a test e-mail', () => testMailDialog(), 'small') : null,
                         editable.length ? button('Edit', () => settingsDialog(group, show), 'small') : null
                     ),
                     table(
@@ -1015,28 +1017,44 @@ export async function settings($page) {
     show(await api('GET', '/service/config'));
 }
 
+// A mail to an address, to see that the settings work
+function testMailDialog() {
+    formDialog({
+        title: 'Send a test e-mail',
+        intro: 'Uses the saved settings of the e-mail group.',
+        submitLabel: 'Send',
+        fields: [{ name: 'to', label: 'To', type: 'email', required: true, value: session.user?.email, autocomplete: 'email' }],
+        onSubmit: async (values) => {
+            await api('POST', '/service/mail/test', { body: values });
+            notice('ok', `A test e-mail is sent to ${values.to}`);
+        },
+    });
+}
+
 function settingsDialog(group, done) {
     const editable = group.settings.filter((setting) => setting.editable);
     // What is saved wins over what the server still runs with
     const current = (setting) => ('pending' in setting ? setting.pending : setting.value);
-    const shown = (setting) => (setting.type === 'list' ? current(setting).join(', ') : current(setting));
+    const shown = (setting) => (setting.secret ? '' : setting.type === 'list' ? current(setting).join(', ') : current(setting));
 
     formDialog({
         title: `${group.title} settings`,
         fields: editable.map((setting) => ({
             name: setting.key,
             label: setting.label,
-            type: setting.options ? 'select' : { bool: 'checkbox', int: 'number' }[setting.type] || 'text',
+            type: setting.secret ? 'password' : setting.options ? 'select' : { bool: 'checkbox', int: 'number' }[setting.type] || 'text',
             options: setting.options,
             value: shown(setting),
             min: setting.min,
             max: setting.type === 'int' ? setting.max : undefined,
             maxlength: setting.type === 'string' ? setting.max : undefined,
-            required: setting.type !== 'bool' && setting.type !== 'list',
+            required: setting.type !== 'bool' && setting.type !== 'list' && !setting.secret && !setting.empty,
             blank: 'empty',
+            autocomplete: setting.secret ? 'new-password' : undefined,
             hint: [
                 setting.hint,
-                setting.type === 'bool' ? null : `Default: ${setting.type === 'list' ? setting.fallback.join(', ') || 'none' : settingDefault(setting)}.`,
+                setting.secret ? 'Leave it empty to keep the current one.' : null,
+                setting.type === 'bool' || setting.secret ? null : `Default: ${setting.type === 'list' ? setting.fallback.join(', ') || 'none' : settingDefault(setting)}.`,
                 setting.live ? null : 'Takes effect after a restart.',
             ].filter(Boolean).join(' '),
         })),
@@ -1044,6 +1062,10 @@ function settingsDialog(group, done) {
             // Only what was changed is sent, so the rest stays at its default
             const changes = {};
             for (const setting of editable) {
+                if (setting.secret) {
+                    if (values[setting.key]) changes[setting.key] = values[setting.key];
+                    continue;
+                }
                 const value = setting.type === 'list' ? String(values[setting.key] ?? '').split(',').map((item) => item.trim()).filter(Boolean) : values[setting.key];
                 if (JSON.stringify(value) !== JSON.stringify(current(setting))) changes[setting.key] = value;
             }

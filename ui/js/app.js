@@ -10,11 +10,12 @@
 
 import { init, clearWrapper, clearHeaderMenu, generateHeaderMenu, generateLoginForm } from '../vendor/athena-ui/athena-ui.js';
 import { api, session, events, setToken, hasToken, onSessionEnd, isAdmin, canMonitor } from './api.js';
-import { el, notice, closeDialog, errorText } from './ui.js';
+import { el, notice, clearNotices, closeDialog, errorText } from './ui.js';
 import * as pages from './pages.js';
 import { blocking } from './blocking.js';
 import { queries, clients } from './monitoring.js';
-import { backup, certificate } from './service.js';
+import { backup, certificate, sync, plugins } from './service.js';
+import * as ui from './ui.js';
 
 // The pages of the menu, in its groups. admin: only for admins; monitor: only
 // for the roles of the monitoring; own: only when users sign in; when: any other condition
@@ -30,24 +31,49 @@ const MENU = [
     { group: 'Service', label: 'Logs', route: 'logs', render: pages.logs, admin: true },
     { group: 'Service', label: 'Backup', route: 'backup', render: backup, admin: true },
     { group: 'Service', label: 'Certificate', route: 'certificate', render: certificate, admin: true },
+    { group: 'Service', label: 'Synchronization', route: 'sync', render: sync, admin: true },
+    { group: 'Service', label: 'Plugins', route: 'plugins', render: plugins, admin: true },
     { group: 'Service', label: 'Settings', route: 'settings', render: pages.settings, admin: true },
     { group: 'Service', label: 'API docs', action: () => window.open('/api/docs/', '_blank', 'noopener'), when: () => session.info?.docsEnabled !== false },
     { group: 'You', label: 'Account', route: 'account', render: pages.account, own: true },
     { group: 'You', label: 'Sign out', action: signOut, own: true },
 ];
 
+// The pages of the plugins that are running, for the user that is signed in; they stand before the account
+let pluginItems = [];
+const menuList = () => {
+    const at = MENU.findIndex((item) => item.group === 'You');
+    return [...MENU.slice(0, at), ...pluginItems, ...MENU.slice(at)];
+};
+
+async function loadPlugins() {
+    try {
+        const entries = session.user ? await api('GET', '/service/plugins/menu', { quiet: true }) : [];
+        pluginItems = entries.map((entry) => ({ group: entry.group, label: entry.label, route: 'plugin', arg: entry.plugin, script: entry.script, render: pluginPage }));
+    } catch {
+        pluginItems = [];
+    }
+}
+
+// The page of a plugin is a module of its own: export async function render($page, ui)
+async function pluginPage($page, name) {
+    const item = pluginItems.find((candidate) => candidate.arg === name);
+    const module = await import(`/plugins/${encodeURIComponent(name)}/${item.script}`);
+    await module.render($page, { api, session, ui });
+}
+
 // Athena UI reads the menu from this object whenever the menu is generated
 const menuItems = { headerMenu: [], footerMenu: [] };
 
-const itemId = (item) => `menu-${item.route || item.label.toLowerCase().replace(/\W+/g, '-')}`;
+const itemId = (item) => `menu-${item.arg ? `${item.route}-${item.arg}` : item.route || item.label.toLowerCase().replace(/\W+/g, '-')}`;
 const allowed = (item) =>
     Boolean(session.user) && (!item.admin || isAdmin()) && (!item.monitor || canMonitor()) && (!item.own || Boolean(session.user.id)) && (!item.when || item.when());
 const currentRoute = () => location.hash.match(/^#\/([^/]*)\/?(.*)$/) || [null, '', ''];
 
 function markActive() {
-    const [, page] = currentRoute();
+    const [, page, argument] = currentRoute();
     $('#header_menu li').removeClass('active').removeAttr('aria-current');
-    if (session.user) $(`#menu-${page}`).addClass('active').attr('aria-current', 'page');
+    if (session.user) $(`#${page === 'plugin' ? `menu-plugin-${CSS.escape(decodeURIComponent(argument))}` : `menu-${page}`}`).addClass('active').attr('aria-current', 'page');
 }
 
 ///--- Menu
@@ -77,7 +103,7 @@ function addMenuToggle() {
 }
 
 function buildMenu() {
-    const items = MENU.filter(allowed);
+    const items = menuList().filter(allowed);
     menuItems.headerMenu.length = 0;
     for (const item of items) {
         menuItems.headerMenu.push({ id: itemId(item), class: 'menu-item', text: '', inner_text: item.label });
@@ -132,11 +158,11 @@ function showFooter() {
 
 // Called by Athena UI with the label of the menu item that was clicked
 function nav(label) {
-    const item = MENU.find((candidate) => candidate.label === label);
+    const item = menuList().find((candidate) => candidate.label === label);
     if (!item) return; // Athena UI also calls it, without a label, while it builds the page
     setMenuOpen(false);
     if (item.action) return item.action();
-    go(`#/${item.route}`);
+    go(item.arg ? `#/${item.route}/${encodeURIComponent(item.arg)}` : `#/${item.route}`);
 }
 
 function go(hash) {
@@ -153,15 +179,18 @@ async function route() {
     closeDialog();
     setMenuOpen(false);
     // Errors stay until they are dismissed; the other notices belong to the page that is left
-    $('#notices .notice:not(.error)').remove();
-    if (!session.user) return showLogin();
-
+    $('.toast:not(.alert-error)').remove();
     const [, page, id] = currentRoute();
+    if (!session.user) {
+        if (page === 'forgot' && session.info?.passwordReset) return showForgot();
+        if (page === 'reset' && id) return showReset(decodeURIComponent(id));
+        return showLogin();
+    }
     if (MOVED[page]) {
         location.replace(`#/${MOVED[page]}`);
         return;
     }
-    const item = MENU.find((candidate) => candidate.route === page && allowed(candidate));
+    const item = menuList().find((candidate) => candidate.route === page && (!candidate.arg || candidate.arg === decodeURIComponent(id || '')) && allowed(candidate));
     if (!item) {
         location.replace('#/dashboard');
         return;
@@ -201,6 +230,59 @@ function showLogin() {
     $form.on('keydown', 'input', (event) => {
         if (event.key === 'Enter') $('#loginForm-submit-login').trigger('click');
     });
+    if (session.info?.passwordReset) $form.after(el('p', { class: 'muted' }, ui.link('#/forgot', 'Forgot your password?')));
+}
+
+// A page of the lost password mails: it stands where the login form does
+function showAccountPage(title, text, ...body) {
+    markActive();
+    clearWrapper();
+    $('#wrapper').append(
+        el('div', { class: 'login-page' }, el('h2', { text: title }), text ? el('p', { class: 'muted', text }) : null, body, el('p', { class: 'muted' }, ui.link('#/login', 'Back to sign in')))
+    );
+}
+
+function showForgot() {
+    const $done = el('p', { class: 'banner', role: 'status' }).hide();
+    const $form = ui.inlineForm({
+        fields: [{ name: 'email', label: 'E-mail address of your account', type: 'email', required: true, autocomplete: 'email' }],
+        submitLabel: 'Send the link',
+        onSubmit: async (values) => {
+            await api('POST', '/service/password-reset/request', { body: values, quiet: true });
+            $done.text('If there is an account with this address, a mail with a link is on its way. The link works for an hour.').show();
+        },
+    });
+    showAccountPage('Lost password', 'A link to choose a new one is mailed to the address of your account.', $form, $done);
+    $form.find('input').first().trigger('focus');
+}
+
+async function showReset(token) {
+    let valid = false;
+    try {
+        valid = (await api('GET', `/service/password-reset/${encodeURIComponent(token)}`, { quiet: true })).valid;
+    } catch (err) {
+        ui.notice('error', errorText(err));
+    }
+    if (!valid) {
+        showAccountPage('Choose a new password', 'This link is not valid any more. Ask for a new one.', el('p', {}, ui.link('#/forgot', 'Lost password')));
+        return;
+    }
+    const $form = ui.inlineForm({
+        fields: [
+            { name: 'password', label: 'New password', type: 'password', required: true, autocomplete: 'new-password', hint: '8 to 128 characters.' },
+            { name: 'repeat', label: 'New password again', type: 'password', required: true, autocomplete: 'new-password', send: false },
+        ],
+        submitLabel: 'Change the password',
+        onSubmit: async (values, raw) => {
+            if (raw.password !== raw.repeat) throw ui.fieldError('repeat', 'The two passwords are not the same');
+            await api('POST', `/service/password-reset/${encodeURIComponent(token)}`, { body: values, quiet: true });
+            history.replaceState(null, '', '#/login');
+            await route();
+            ui.notice('ok', 'Your password is changed. Sign in with it.');
+        },
+    });
+    showAccountPage('Choose a new password', null, $form);
+    $form.find('input').first().trigger('focus');
 }
 
 // Called by Athena UI with what is typed in its login form
@@ -215,7 +297,8 @@ async function login({ username, password }) {
         const result = await api('POST', '/auth/login', { body: { username: username.trim(), password }, quiet: true });
         setToken(result.token);
         session.user = result.user;
-        $('#notices').empty();
+        clearNotices();
+        await loadPlugins();
         buildMenu();
         route(); // the page that was asked for before signing in
     } catch (err) {
@@ -286,6 +369,7 @@ async function start() {
     });
     $(window).on('hashchange', route);
 
+    await loadPlugins();
     buildMenu();
     await route();
     if (!session.info) notice('error', 'The server can not be reached');

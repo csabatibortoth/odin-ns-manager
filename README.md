@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.3.0** - see the [release notes](#release-notes).
+Current version: **2.4.0** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -37,6 +37,9 @@ It brings four packages together:
 | Swagger UI of the API at `/api/docs` | Available |
 | Settings changed by the admins in the browser | Available |
 | Graphs of the queries, the answer time, the memory and the cache | Available |
+| Synchronization of several servers, secondaries copying from a primary | Available |
+| E-mail: notifications and lost password links | Available |
+| Plugins that extend the server | Available |
 | Zone transfers (AXFR) to secondary servers | Planned |
 | User interface in the browser | Available |
 
@@ -427,6 +430,70 @@ up; a query for another type is answered with "not implemented".
 The cache lives in the memory of the process and is empty after a restart. It
 is only for the answers of the upstream; the own zones are not in it.
 
+## Synchronization
+
+Several installed servers can hold the same zones, records and blocking. One of
+them is the **primary**; the others are **secondaries** that copy from it. The
+primary needs no setting: it only needs an admin account that the secondaries
+sign in with (a dedicated one is best).
+
+On a secondary, open [Settings](#settings), group *Synchronization*, and set:
+
+| Setting | Variable | Meaning |
+| --- | --- | --- |
+| Copy from a primary server | `ODIN_SYNC_ENABLED` | Switches it on |
+| Address of the primary | `ODIN_SYNC_URL` | For example `https://primary.example.com:45452` |
+| Admin user / password | `ODIN_SYNC_USER`, `ODIN_SYNC_PASSWORD` | The account on the primary |
+| Synchronize every (minutes) | `ODIN_SYNC_INTERVAL` | Default 15 |
+| What to copy | `ODIN_SYNC_SECTIONS` | `zones`, `records`, `blocking`, `users` (default: the first three) |
+| What is here already | `ODIN_SYNC_EXISTING` | `overwrite` (default) or `skip` |
+| Accept a certificate that is not trusted | `ODIN_SYNC_INSECURE` | For a primary with a certificate of its own |
+
+Every run reads `/api/backup/export` of the primary and imports it here, like
+the import of the Backup page does. The **Synchronization** page of the
+interface shows the last run and can start one at once. The password is better
+kept in the environment than in the settings file.
+
+The copy goes one way, and an import never deletes: a zone that was deleted on
+the primary has to be deleted on the secondaries as well. Changes made on a
+secondary are overwritten by the next run, so change things on the primary.
+Copy the users only when the same accounts are wanted everywhere: their
+password hashes are copied with them.
+
+## E-mail
+
+The server can send e-mails: notifications to the admins, lost password links,
+and what [plugins](#plugins) send. Set it up in [Settings](#settings), group
+*E-mail*:
+
+| Setting | Variable | Meaning |
+| --- | --- | --- |
+| Send e-mails | `ODIN_MAIL_ENABLED` | Switches it on |
+| SMTP server, port, connection | `ODIN_MAIL_HOST`, `ODIN_MAIL_PORT`, `ODIN_MAIL_SECURITY` | `starttls` (587), `tls` (465) or `none` |
+| SMTP user / password | `ODIN_MAIL_USER`, `ODIN_MAIL_PASSWORD` | Empty for a server without login |
+| Sender address | `ODIN_MAIL_FROM` | For example `Odin NS <odin@example.com>` |
+| Notify these addresses | `ODIN_MAIL_ADMINS` | Get a mail when the synchronization fails, and when it works again |
+| Address of this interface | `ODIN_PUBLIC_URL` | For the links in the mails |
+
+The *Send a test e-mail* button of the group checks the settings.
+
+**Lost password.** When e-mail is set up and the address of the interface is
+given, the sign in page offers *Forgot your password?*. The user enters the
+e-mail address of their account and gets a link that works for one hour and one
+use. The answer does not tell whether the address is known, and the requests
+are limited. The links are kept in memory, so a restart makes them invalid.
+
+## Plugins
+
+A plugin is a folder in the `plugins` folder (`ODIN_PLUGINS_FOLDER`). It can
+add an API route, a page to the menu, jobs, and react to changes of the DNS
+data and to synchronizations. Plugins run with the rights of the server: enable
+only code you trust. A plugin runs when its name is in *Plugins that run*
+(`ODIN_PLUGINS_ENABLED`, comma separated); changing it needs a restart. The
+**Plugins** page lists what was found and what state it is in.
+`plugins/example` shows all of it; see [docs/plugins.md](docs/plugins.md) for
+the api.
+
 ## HTTPS
 
 Set `ODIN_HTTPS_ENABLED=true` to serve the API and the user interface over
@@ -608,6 +675,11 @@ temporary file; they need no database.
 | `services/serverService/buildInfo.js` | The build number of the running server |
 | `services/apiService/apiService.js` | Database connection, start and stop of the management API, logging |
 | `services/apiService/serviceRoutes.js` | The `/api/service` endpoints |
+| `services/serverService/syncService.js` | The synchronization with a primary server |
+| `services/serverService/mailService.js` | Sending e-mails, and the notifications |
+| `services/serverService/passwordResetService.js` | The lost password links |
+| `services/pluginService/pluginService.js` | Loads the plugins |
+| `plugins/` | The plugins; `example` is one to start from |
 | `services/apiService/migration.js` | Carries the data of the releases before 2.3.0 over |
 | `services/uiService/uiService.js` | Serves the user interface |
 | `install/` | The installers for Linux (`install.sh`) and Windows (`install.ps1`), and what they share: the launcher of the service and the writer of the settings |
@@ -616,6 +688,45 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.4.0
+
+Several servers can be kept in step, the server can send e-mails, and plugins
+can extend it. Updates athena-ui-js to 1.0.0.
+
+#### Added
+
+- **Synchronization.** A secondary server copies the zones, records, blocking
+  and, if wanted, the users of a primary on a schedule, through its export and
+  import API. New Synchronization page. See [Synchronization](#synchronization).
+- **E-mail.** SMTP settings with a test e-mail, notifications to the admins
+  when the synchronization fails and when it works again, and lost password
+  links on the sign in page. See [E-mail](#e-mail).
+- **Plugins.** Folders in `plugins/` with their own API routes, pages in the
+  menu, jobs and events, and a Plugins page. `plugins/example` is a plugin to
+  start from. See [Plugins](#plugins) and [docs/plugins.md](docs/plugins.md).
+- Secret settings, such as the SMTP password, can be changed on the Settings
+  page; their values are never shown.
+
+#### Changed
+
+- athena-ui-js 0.4.1 → 1.0.0. The notices are its toasts, and the questions
+  before a delete are its dialogs.
+- New settings groups E-mail, Synchronization and Plugins; every setting has an
+  `ODIN_*` variable.
+
+#### Upgrading from 2.3.0
+
+- Run `npm install`. Nothing has to be changed: the new features are off until
+  they are set up.
+- A plugin runs with the rights of the server. Enable only plugins you trust.
+
+#### Not yet included
+
+- The synchronization is one way and never deletes: what is deleted on the
+  primary has to be deleted on the secondaries as well.
+- The lost password links are kept in memory, so a restart makes them invalid.
+- Zone transfers (AXFR) are refused, and responses have no authority section.
 
 ### 2.3.0
 

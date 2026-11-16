@@ -1,3 +1,4 @@
 config/settings.json
 build.json
 sslcert/
+plugins/*/data/
