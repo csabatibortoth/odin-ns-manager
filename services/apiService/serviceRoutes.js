@@ -15,6 +15,10 @@ const build = require('../serverService/buildInfo');
 const searchService = require('../serverService/searchService');
 const statusService = require('../serverService/statusService');
 const zoneService = require('../serverService/zoneService');
+const mailService = require('../serverService/mailService');
+const passwordResetService = require('../serverService/passwordResetService');
+const pluginService = require('../pluginService/pluginService');
+const syncService = require('../serverService/syncService');
 
 const LOOKUP_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'PTR', 'SOA', 'SRV', 'TXT'];
 const LOG_TARGETS = ['log', 'error', 'security'];
@@ -196,6 +200,7 @@ function createRouter() {
             dnsWriteRoles: config.dnsWriteRoles,
             monitoringRoles: config.monitoringRoles,
             docsEnabled: config.docsEnabled,
+            passwordReset: passwordResetService.isAvailable(),
         });
     });
 
@@ -240,6 +245,81 @@ function createRouter() {
 
     router.get('/logs', authenticate, adminOnly, async (req, res) => {
         res.json(await readLog(req.query));
+    });
+
+    ///--- E-mail
+
+    router.get('/mail', authenticate, adminOnly, (req, res) => {
+        res.json({ enabled: config.mailEnabled, configured: mailService.isConfigured(), recipients: config.mailAdmins });
+    });
+
+    // body: { to } - a mail to see that the settings work
+    router.post('/mail/test', authenticate, adminOnly, async (req, res) => {
+        const to = typeof req.body?.to === 'string' ? req.body.to.trim() : '';
+        if (!/^[^\s@]+@[^\s@]+$/.test(to)) throw new HttpError(400, 'Validation failed', { to: 'to must be an e-mail address' });
+        try {
+            await mailService.send({ to, subject: 'Test e-mail', text: `This is a test e-mail of ${config.serverName}, sent by ${req.user.username}. The e-mail settings work.` });
+        } catch (err) {
+            // The reason is for the admin who is trying the settings
+            throw new HttpError(err.status || 502, err.message);
+        }
+        logService.addInfoLogBasicInfoEntry('Test e-mail sent to ', to, ' by ', req.user.username);
+        res.json({ sent: true });
+    });
+
+    ///--- Lost passwords: for people who can not sign in, so without a token
+
+    const attempts = new Map(); // address -> { count, since }
+    const throttle = (req, res, next) => {
+        const now = Date.now();
+        const entry = attempts.get(req.ip);
+        if (!entry || now - entry.since > 15 * 60 * 1000) attempts.set(req.ip, { count: 1, since: now });
+        else if (++entry.count > 10) throw new HttpError(429, 'Too many attempts. Try again later.');
+        if (attempts.size > 5000) attempts.clear();
+        next();
+    };
+
+    router.post('/password-reset/request', throttle, async (req, res) => {
+        await passwordResetService.request(req.body?.email);
+        res.json({ sent: true }); // the same for every address
+    });
+
+    router.get('/password-reset/:token', throttle, (req, res) => {
+        res.json({ valid: passwordResetService.check(req.params.token) });
+    });
+
+    router.post('/password-reset/:token', throttle, async (req, res) => {
+        await passwordResetService.reset(req.params.token, req.body?.password);
+        res.json({ changed: true });
+    });
+
+    ///--- Synchronization
+
+    router.get('/sync', authenticate, adminOnly, (req, res) => {
+        res.json(syncService.state());
+    });
+
+    router.post('/sync/run', authenticate, adminOnly, async (req, res) => {
+        if (!config.syncEnabled) throw new HttpError(409, 'The synchronization is switched off in the settings');
+        try {
+            await syncService.run('manual');
+        } catch (err) {
+            if (!err.status) throw new HttpError(502, err.message);
+            throw err;
+        }
+        logService.addInfoLogBasicInfoEntry('Synchronization started by ', req.user.username);
+        res.json(syncService.state());
+    });
+
+    ///--- Plugins
+
+    router.get('/plugins', authenticate, adminOnly, (req, res) => {
+        res.json({ folder: config.pluginsFolder, plugins: pluginService.discover() });
+    });
+
+    // The pages of the plugins that the signed in user may open
+    router.get('/plugins/menu', authenticate, (req, res) => {
+        res.json(pluginService.menu(req.user.role));
     });
 
     return finish(router);

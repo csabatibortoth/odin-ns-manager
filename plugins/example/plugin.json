@@ -1,0 +1,8 @@
+{
+    "name": "example",
+    "version": "1.0.0",
+    "description": "Shows what a plugin can do: an API route, a page in the menu, a job and an event. Enable it with the name \"example\".",
+    "main": "index.js",
+    "roles": ["admin", "user"],
+    "ui": { "label": "Example", "script": "ui.js", "group": "Plugins" }
+}

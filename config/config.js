@@ -18,7 +18,8 @@ const SETTINGS_FILE = path.resolve(__dirname, '..', env.ODIN_SETTINGS_FILE || 'c
 const ROLES = ['admin', 'user'];
 const rolesCheck = (value) => (value.length > 0 && value.every((role) => ROLES.includes(role))) || `must be one or more of: ${ROLES.join(', ')}`;
 const HOST_NAME = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/i;
-const TRUE_WORDS = ['1', 'true', 'yes', 'on'];
+const BASE_URL = /^https?:\/\/[^\s/]+\/?$/i;
+const TRUE_WORDS =['1', 'true', 'yes', 'on'];
 
 const isUpstream = (value) => {
     try {
@@ -151,6 +152,64 @@ const SETTINGS = [
     {
         group: 'HTTPS certificate', key: 'httpsKeyPassphrase', env: 'ODIN_HTTPS_KEY_PASSPHRASE', type: 'string', fallback: '', label: 'Own certificate: passphrase of the key',
         editable: false, secret: true, empty: true,
+    },
+
+    {
+        group: 'E-mail', key: 'mailEnabled', env: 'ODIN_MAIL_ENABLED', type: 'bool', fallback: false, label: 'Send e-mails', live: true,
+        hint: 'Notifications, the lost password mails and what plugins send.',
+    },
+    { group: 'E-mail', key: 'mailHost', env: 'ODIN_MAIL_HOST', type: 'string', fallback: '', label: 'SMTP server', live: true, empty: true, max: 253 },
+    { group: 'E-mail', key: 'mailPort', env: 'ODIN_MAIL_PORT', type: 'int', fallback: 587, label: 'SMTP port', live: true, min: 1, max: 65535 },
+    {
+        group: 'E-mail', key: 'mailSecurity', env: 'ODIN_MAIL_SECURITY', type: 'string', fallback: 'starttls', label: 'Connection', live: true,
+        options: [{ value: 'starttls', text: 'STARTTLS (port 587)' }, { value: 'tls', text: 'TLS from the start (port 465)' }, { value: 'none', text: 'Not encrypted' }],
+    },
+    { group: 'E-mail', key: 'mailUser', env: 'ODIN_MAIL_USER', type: 'string', fallback: '', label: 'SMTP user', live: true, empty: true, max: 254 },
+    { group: 'E-mail', key: 'mailPassword', env: 'ODIN_MAIL_PASSWORD', type: 'string', fallback: '', label: 'SMTP password', live: true, empty: true, secret: true, max: 256 },
+    {
+        group: 'E-mail', key: 'mailFrom', env: 'ODIN_MAIL_FROM', type: 'string', fallback: '', label: 'Sender address', live: true, empty: true, max: 254,
+        hint: 'For example: Odin NS <odin@example.com>',
+    },
+    {
+        group: 'E-mail', key: 'mailAdmins', env: 'ODIN_MAIL_ADMINS', type: 'list', fallback: [], label: 'Notify these addresses', live: true,
+        hint: 'Comma separated. They get a mail when the synchronization fails, and when it works again; plugins can send to them as well. Empty: no notifications.',
+        check: (value) => value.every((address) => /^[^\s@]+@[^\s@]+$/.test(address)) || 'must be e-mail addresses',
+    },
+    {
+        group: 'E-mail', key: 'publicUrl', env: 'ODIN_PUBLIC_URL', type: 'string', fallback: '', label: 'Address of this interface', live: true, empty: true, max: 253,
+        hint: 'For the links in the mails, for example https://dns.example.com:45452. Without it there is no lost password mail.',
+        check: (value) => value === '' || BASE_URL.test(value) || 'must be an http:// or https:// address',
+    },
+
+    {
+        group: 'Synchronization', key: 'syncEnabled', env: 'ODIN_SYNC_ENABLED', type: 'bool', fallback: false, label: 'Copy from a primary server', live: true,
+        hint: 'This server becomes a secondary: it reads the export of the primary on a schedule and imports it. The primary needs no setting, only an admin account.',
+    },
+    { group: 'Synchronization', key: 'syncUrl', env: 'ODIN_SYNC_URL', type: 'string', fallback: '', label: 'Address of the primary', live: true, empty: true, max: 253,
+        hint: 'For example https://primary.example.com:45452',
+        check: (value) => value === '' || BASE_URL.test(value) || 'must be an http:// or https:// address' },
+    { group: 'Synchronization', key: 'syncUser', env: 'ODIN_SYNC_USER', type: 'string', fallback: '', label: 'Admin user on the primary', live: true, empty: true, max: 254 },
+    { group: 'Synchronization', key: 'syncPassword', env: 'ODIN_SYNC_PASSWORD', type: 'string', fallback: '', label: 'Password of that user', live: true, empty: true, secret: true, max: 256 },
+    { group: 'Synchronization', key: 'syncInterval', env: 'ODIN_SYNC_INTERVAL', type: 'int', fallback: 15, label: 'Synchronize every (minutes)', live: true, min: 1, max: 10080 },
+    {
+        group: 'Synchronization', key: 'syncSections', env: 'ODIN_SYNC_SECTIONS', type: 'list', fallback: ['zones', 'records', 'blocking'], label: 'What to copy', live: true,
+        hint: 'Any of: zones, records, blocking, users.',
+        check: (value) => value.every((section) => ['zones', 'records', 'blocking', 'users'].includes(section)) || 'must be zones, records, blocking or users',
+    },
+    {
+        group: 'Synchronization', key: 'syncExisting', env: 'ODIN_SYNC_EXISTING', type: 'string', fallback: 'overwrite', label: 'What is here already', live: true,
+        options: [{ value: 'overwrite', text: 'Update it from the primary' }, { value: 'skip', text: 'Keep it: only what is missing is created' }],
+    },
+    { group: 'Synchronization', key: 'syncInsecure', env: 'ODIN_SYNC_INSECURE', type: 'bool', fallback: false, label: 'Accept a certificate that is not trusted', live: true, hint: 'For a primary with a certificate of its own. The password is sent to it: use only inside a network you trust.' },
+
+    {
+        group: 'Plugins', key: 'pluginsFolder', env: 'ODIN_PLUGINS_FOLDER', type: 'string', fallback: 'plugins', label: 'Folder of the plugins', max: 260,
+        hint: 'Relative to the folder of the server.',
+    },
+    {
+        group: 'Plugins', key: 'pluginsEnabled', env: 'ODIN_PLUGINS_ENABLED', type: 'list', fallback: [], label: 'Plugins that run',
+        hint: 'Comma separated names of the folders. A plugin is code that runs with the rights of the server: enable only what you trust.',
+        check: (value) => value.every((name) => /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(name)) || 'must be names of plugin folders',
     },
 
     { group: 'Database', key: 'modelServerAddress', env: 'ODIN_DB_ADDRESS', type: 'string', fallback: '127.0.0.1', label: 'MongoDB address', editable: false },
@@ -288,7 +347,10 @@ function describe() {
             editable: setting.editable !== false && !fromEnvironment,
             live: Boolean(setting.live),
         };
-        if (!setting.secret) {
+        if (setting.secret) {
+            item.secret = true;
+            item.isSet = Boolean(config[setting.key]);
+        } else {
             item.value = config[setting.key];
             item.fallback = setting.fallback;
             // Saved, but the server still runs with the value it was started with

@@ -112,6 +112,8 @@ async function startApi({ onDnsChange } = {}) {
     const app = express();
     app.disable('x-powered-by');
     app.use('/api/service', require('./serviceRoutes').createRouter());
+    app.use('/api/plugins', require('../pluginService/pluginService').createRouter());
+    app.use('/plugins', require('../pluginService/pluginService').createStatic());
     if (config.uiEnabled) app.use(require('../uiService/uiService').createUi());
     app.use(createApp());
 

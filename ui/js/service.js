@@ -2,7 +2,7 @@
 // certificate of HTTPS.
 
 import { api, authHeader, session } from './api.js';
-import { el, control, button, select, badge, notice, showError, errorText, formatDate, head, options, card, link } from './ui.js';
+import { el, control, button, select, table, badge, notice, showError, errorText, formatDate, head, options, card, link } from './ui.js';
 
 ///--- Export and import
 
@@ -209,4 +209,112 @@ function uploadCard(done) {
             notice('ok', 'The certificate is replaced');
         }, 'primary'))
     );
+}
+
+///--- Synchronization
+
+const SECTION_NAMES = { zones: 'zones', records: 'standalone records', blocking: 'blocking', users: 'users' };
+
+function syncResult(result) {
+    const counted = COUNTED.filter(([key]) => result[key]).map(([key, label]) => {
+        const { created, updated, skipped, failed } = result[key];
+        return [label, `${created} created, ${updated} updated, ${skipped} kept as they are${failed ? `, ${failed} failed` : ''}`];
+    });
+    const $card = card('What the last run did', counted.length ? counted : [['Sections', 'Nothing was copied']]);
+    if (result.errors?.length) {
+        $card.append(
+            el('p', { class: 'field-error', text: `${result.errors.length} item(s) were refused:` }),
+            el('ul', { class: 'small' }, result.errors.map((error) => el('li', { text: `${error.section}: ${error.item} - ${error.error}` })))
+        );
+    }
+    return $card;
+}
+
+export async function sync($page) {
+    const $body = el('div');
+
+    const show = (state) => {
+        $body.empty();
+        if (!state.enabled) {
+            $body.append(
+                el('p', { class: 'banner warn', text: 'This server does not copy from a primary: the synchronization is switched off.' }),
+                el('p', {}, 'Switch it on, and set the primary and the account to sign in with, in the ', link('#/settings', 'settings'), ' (group Synchronization).')
+            );
+        }
+        const result = state.lastError
+            ? el('span', { class: 'field-error break', text: state.lastError })
+            : state.lastSuccessAt ? badge('Worked', 'ok') : '–';
+        $body.append(
+            el(
+                'div',
+                { class: 'cards wide' },
+                card(
+                    'Primary',
+                    [
+                        ['Address', state.url ? el('span', { class: 'mono break', text: state.url }) : '–'],
+                        ['Copies', state.sections.map((name) => SECTION_NAMES[name] || name).join(', ') || '–'],
+                        ['Every', `${state.interval} min`],
+                        ['Version of the primary', state.primary?.version || '–'],
+                    ],
+                    button('Synchronize now', async () => {
+                        try {
+                            show(await api('POST', '/service/sync/run'));
+                            notice('ok', 'The synchronization is done');
+                        } catch (err) {
+                            show(await api('GET', '/service/sync'));
+                            throw err;
+                        }
+                    }, 'primary')
+                ),
+                card('Last run', [
+                    ['Started', formatDate(state.lastRunAt)],
+                    ['Last success', formatDate(state.lastSuccessAt)],
+                    ['Next', state.enabled ? formatDate(state.nextRunAt) : '–'],
+                    ['Result', result],
+                ])
+            )
+        );
+        if (state.lastResult) $body.append(syncResult(state.lastResult));
+    };
+
+    $page.append(
+        head('Synchronization', button('Refresh', async () => show(await api('GET', '/service/sync')))),
+        el('p', { class: 'muted', text: 'Copies the zones, records, blocking and users of a primary server to this one, on a schedule. It goes one way, and nothing is deleted here: what was deleted on the primary has to be deleted here as well.' }),
+        $body
+    );
+    show(await api('GET', '/service/sync'));
+}
+
+///--- Plugins
+
+export async function plugins($page) {
+    const $body = el('div');
+    const stateBadge = (plugin) => {
+        if (plugin.state === 'running') return badge('Running', 'ok');
+        if (plugin.state === 'failed') return badge('Failed', 'danger');
+        return plugin.enabled ? badge('Starts after a restart', 'warn') : badge('Off');
+    };
+
+    const show = (result) => {
+        $body.empty().append(
+            table(
+                [
+                    { title: 'Plugin', cell: (plugin) => el('strong', { text: plugin.name }) },
+                    { title: 'Version', cell: (plugin) => plugin.version || '–' },
+                    { title: 'What it does', cell: (plugin) => plugin.description || '–' },
+                    { title: 'Page', cell: (plugin) => plugin.ui?.label || '–' },
+                    { title: 'State', cell: (plugin) => [stateBadge(plugin), plugin.error ? el('div', { class: 'field-error break', text: plugin.error }) : null] },
+                ],
+                result.plugins,
+                `There are no plugins in the folder ${result.folder}.`
+            )
+        );
+    };
+
+    $page.append(
+        head('Plugins', button('Refresh', async () => show(await api('GET', '/service/plugins')))),
+        el('p', {}, 'A plugin is a folder in the plugins folder of the server. It runs with the rights of the server, so enable only what you trust: add its name to the setting "Plugins that run" in the ', link('#/settings', 'settings'), ', and restart the service.'),
+        $body
+    );
+    show(await api('GET', '/service/plugins'));
 }
