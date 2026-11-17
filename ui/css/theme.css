@@ -827,6 +827,14 @@ body:not(.signed-in) #header_tools {
     white-space: nowrap;
 }
 
+/* There is room on a wide screen: the tabs wrap instead of being scrolled */
+@media (min-width: 1000px) {
+    .tab-list {
+        flex-wrap: wrap;
+        overflow-x: visible;
+    }
+}
+
 .tab-active {
     border-bottom-color: var(--accent);
 }
@@ -856,8 +864,14 @@ body:not(.signed-in) #header_tools {
     box-shadow: var(--shadow);
 }
 
-/* A card of Athena UI: the padding is the one of the card */
+/* A card of Athena UI: the padding is the one of the card, and the footer is at the bottom */
+.card {
+    display: flex;
+    flex-direction: column;
+}
+
 .card .card-body {
+    flex: 1;
     padding: 0;
 }
 

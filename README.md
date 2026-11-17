@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.5.0** - see the [release notes](#release-notes).
+Current version: **2.5.1** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -541,7 +541,7 @@ scrolled sideways.
 | | | |
 | --- | --- | --- |
 | ![The dashboard on a phone](docs/screenshots/mobile-dashboard.png) | ![The menu on a phone](docs/screenshots/mobile-menu.png) | ![The records of a zone on a phone](docs/screenshots/mobile-records.png) |
-| **Dashboard** on a phone | **The menu** (screenshot of 2.4.0) | **A table**: every row is a block |
+| **Dashboard** on a phone | **The menu**: a group opens as a sheet above the bar | **A table**: every row is a block |
 
 ### Themes
 
@@ -557,6 +557,11 @@ Every theme is made in a light and a dark mode. **Like the system** follows the
 light or dark mode of the operating system and changes with it, and is the
 default. The choice is kept in the browser, so it is the same on the sign in page,
 and is different on every device.
+
+| | |
+| --- | --- |
+| ![The Aesir theme, light](docs/screenshots/theme-aesir.png) **Aesir**, light | ![The Aesir theme, dark](docs/screenshots/theme-aesir-dark.png) **Aesir**, dark |
+| ![The menu of the look of the interface](docs/screenshots/appearance-menu.png) **The menu of the header**: the theme and the mode | |
 
 A theme is a block of colors in `ui/css/themes.css` for each mode, and an entry
 in `THEMES` of `ui/js/theme.js`; nothing in the stylesheet `ui/css/theme.css`
@@ -611,6 +616,7 @@ The screenshots are of a demo installation with sample zones and records, the bl
 | ![Editing settings](docs/screenshots/settings-edit.png) **Editing the settings** of a group | ![Users](docs/screenshots/users.png) **Users** |
 | ![Account](docs/screenshots/account.png) **Account**: the profile and the password of the signed-in user | ![Logs](docs/screenshots/logs.png) **Logs** |
 | ![Dark mode](docs/screenshots/zones-dark.png) **Dark mode** | ![The dashboard in dark mode](docs/screenshots/dashboard-dark.png) **Dashboard** in dark mode |
+| ![The Aesir theme](docs/screenshots/theme-aesir.png) **Aesir** theme, light | ![The Aesir theme in dark mode](docs/screenshots/theme-aesir-dark.png) **Aesir** theme, dark |
 | ![The blocking in dark mode](docs/screenshots/blocking-dark.png) **Blocking** in dark mode | ![The query log on a phone](docs/screenshots/mobile-queries.png) **On a phone**: the query log |
 
 ## Management API
@@ -720,6 +726,19 @@ temporary file; they need no database.
 
 ## Release notes
 
+### 2.5.1
+
+#### Changed
+
+- **New screenshots** of every page, made of the interface of 2.5: the light and
+  the dark mode, the phone, and the Aesir theme.
+- On a wide screen the tabs of the settings wrap into a second row instead of
+  being scrolled sideways.
+
+#### Upgrading from 2.5.0
+
+- There are no new dependencies, and nothing has to be changed.
+
 ### 2.5.0
 
 The user interface is reworked: a new icon, a new menu, themes, and more of
@@ -755,7 +774,6 @@ Athena UI in use.
 #### Upgrading from 2.4.0
 
 - There are no new dependencies, and nothing has to be changed.
-- The screenshots of the documentation are of 2.4.0.
 
 ### 2.4.0
 
