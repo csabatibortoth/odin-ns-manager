@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.5.1** - see the [release notes](#release-notes).
+Current version: **2.6.0** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -40,6 +40,7 @@ It brings four packages together:
 | Synchronization of several servers, secondaries copying from a primary | Available |
 | E-mail: notifications and lost password links | Available |
 | Plugins that extend the server | Available |
+| Reporting to a Heimdall Monitoring System, as the plugin `heimdall` | Available |
 | Zone transfers (AXFR) to secondary servers | Planned |
 | User interface in the browser | Available |
 | Themes: Default and Aesir, each in a light and a dark mode | Available |
@@ -495,6 +496,14 @@ only code you trust. A plugin runs when its name is in *Plugins that run*
 `plugins/example` shows all of it; see [docs/plugins.md](docs/plugins.md) for
 the api.
 
+`plugins/heimdall` makes the server an agent of the
+[Heimdall Monitoring System](https://gitlab.com/heimdall-monitoring-system): it
+sends the counters and the state of the DNS server, the zones, the blocking and
+the cache as metrics, and what changed as logs. Add `heimdall` to *Plugins that
+run*, restart, and enter the address of Heimdall, the UID and the license key of
+the agent on its page (**Plugins > Heimdall**). The names that clients asked
+for are never sent. See [plugins/heimdall/README.md](plugins/heimdall/README.md).
+
 ## HTTPS
 
 Set `ODIN_HTTPS_ENABLED=true` to serve the API and the user interface over
@@ -725,6 +734,24 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.6.0
+
+#### Added
+
+- **The plugin `heimdall`**: reports the server to a Heimdall Monitoring System
+  as one of its agents. Metrics of the queries (by kind, as counters), the answer
+  time, the memory, the zones, the blocking, the cache and the query log, and
+  logs of changes and failures. It has a page of its own for the connection, and
+  keeps the license key out of the interface and the log. The names and the
+  clients of the queries are never sent. See
+  [plugins/heimdall/README.md](plugins/heimdall/README.md).
+
+#### Upgrading from 2.5.1
+
+- There are no new dependencies. The plugin is off until `heimdall` is in
+  *Plugins that run* (a restart is needed), and does nothing until it has an
+  address, an agent UID and a license key.
 
 ### 2.5.1
 
