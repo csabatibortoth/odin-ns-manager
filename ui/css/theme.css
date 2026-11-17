@@ -439,11 +439,11 @@ body:not(.signed-in) #header_tools {
         font-size: 1rem;
     }
 
-    /* The page behind the sheet is dimmed; a touch on it closes the sheet */
+    /* The page behind the sheet is dimmed; a touch on it closes the sheet. It lies under the header (60), which holds the sheet: the sheet must stay above it. */
     body:has(#header_menu .submenu:not([hidden]))::after {
         content: "";
         position: fixed;
-        z-index: 65;
+        z-index: 55;
         inset: 0;
         background: rgb(0 0 0 / 45%);
     }
