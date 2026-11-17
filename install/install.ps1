@@ -337,7 +337,7 @@ function FetchApp {
 
     # The service is started through installlaunch.js, which the versions before 2.3.0 do not have
     if (-not (Test-Path -LiteralPath (Join-Path $AppDir 'installlaunch.js'))) {
-        Fail 'This version of the program is older than its installer (2.3.0): choose a newer one with -Branch, such as -Branch develop.'
+        Fail 'This version of the program is older than its installer (2.3.0): choose a newer one with -Branch, such as -Branch master.'
     }
 
     Push-Location $AppDir
