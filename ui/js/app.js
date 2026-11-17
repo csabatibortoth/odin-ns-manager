@@ -1,14 +1,17 @@
 // The user interface of Odin NS Manager. Athena UI generates the page (header
-// with the menu, content, footer) and the login form; the pages are in
-// pages.js, blocking.js, monitoring.js and service.js.
+// with the menu, content, footer), the login form, the notices and the
+// dialogs, and routes the pages; the pages are in pages.js, blocking.js,
+// monitoring.js and service.js.
 //
-// The menu of Athena UI is shown as a sidebar next to the content. Where the
-// screen is too narrow for that it is a drawer, opened with the menu button of
-// the header: see "Menu" in theme.css.
+// The menu is the menu of Athena UI with its submenus: a bar in the header with
+// a dropdown for every group, and on a tablet or a phone a bar of tabs at the
+// bottom of the screen, where a group opens as a sheet. See "Menu" in theme.css.
 
 /* global $ */
 
-import { init, clearWrapper, clearHeaderMenu, generateHeaderMenu, generateLoginForm } from '../vendor/athena-ui/athena-ui.js';
+import {
+    init, clearWrapper, clearHeaderMenu, generateHeaderMenu, generateLoginForm, generateDropdown, generateAvatar, createRouter,
+} from '../vendor/athena-ui/athena-ui.js';
 import { api, session, events, setToken, hasToken, onSessionEnd, isAdmin, canMonitor } from './api.js';
 import { el, notice, clearNotices, closeDialog, errorText } from './ui.js';
 import * as pages from './pages.js';
@@ -16,6 +19,8 @@ import { blocking } from './blocking.js';
 import { queries, clients } from './monitoring.js';
 import { backup, certificate, sync, plugins } from './service.js';
 import * as ui from './ui.js';
+import { icon } from './icons.js';
+import { THEMES, MODES, setTheme, setMode, onAppearanceChange, refresh as refreshTheme } from './theme.js';
 
 // The pages of the menu, in its groups. admin: only for admins; monitor: only
 // for the roles of the monitoring; own: only when users sign in; when: any other condition
@@ -65,70 +70,87 @@ async function pluginPage($page, name) {
 // Athena UI reads the menu from this object whenever the menu is generated
 const menuItems = { headerMenu: [], footerMenu: [] };
 
-const itemId = (item) => `menu-${item.arg ? `${item.route}-${item.arg}` : item.route || item.label.toLowerCase().replace(/\W+/g, '-')}`;
+const GROUP_ICONS = { DNS: 'dns', Monitoring: 'monitoring', Service: 'service', You: 'user' };
+const slug = (text) => text.toLowerCase().replace(/\W+/g, '-');
+const itemId = (item) => `menu-${item.arg ? `${item.route}-${item.arg}` : item.route || slug(item.label)}`;
+const groupId = (group) => `menu-group-${slug(group)}`;
 const allowed = (item) =>
     Boolean(session.user) && (!item.admin || isAdmin()) && (!item.monitor || canMonitor()) && (!item.own || Boolean(session.user.id)) && (!item.when || item.when());
-const currentRoute = () => location.hash.match(/^#\/([^/]*)\/?(.*)$/) || [null, '', ''];
+const who = () => (session.user ? session.user.displayName || session.user.username : '');
+
+// The page and its argument from the address: #/zones/abc -> ['zones', 'abc']
+function currentPath() {
+    const [, page = '', argument = ''] = location.hash.match(/^#\/([^/]*)\/?(.*)$/) || [];
+    let decoded = argument;
+    try {
+        decoded = decodeURIComponent(argument);
+    } catch {
+        // Not valid: the page will not be found
+    }
+    return [page, decoded];
+}
 
 function markActive() {
-    const [, page, argument] = currentRoute();
-    $('#header_menu li').removeClass('active').removeAttr('aria-current');
-    if (session.user) $(`#${page === 'plugin' ? `menu-plugin-${CSS.escape(decodeURIComponent(argument))}` : `menu-${page}`}`).addClass('active').attr('aria-current', 'page');
+    $('#header_menu li').removeClass('active');
+    $('#header_menu .submenu-item').removeAttr('aria-current');
+    if (!session.user) return;
+
+    const [page, argument] = currentPath();
+    const item = menuList().find((candidate) => candidate.route === page && (!candidate.arg || candidate.arg === argument));
+    if (!item) return;
+    if (!item.group) {
+        $(`#${itemId(item)}`).addClass('active');
+        return;
+    }
+    const $group = $(`#${groupId(item.group)}`).addClass('active');
+    $group.find('.submenu-item').filter((_, entry) => entry.textContent === item.label).attr('aria-current', 'page');
 }
 
 ///--- Menu
 
-// Opens or closes the drawer the menu is on a narrow screen
-function setMenuOpen(open, { focus = false } = {}) {
-    $('body').toggleClass('menu-open', open);
-    $('#menu_toggle').attr({ 'aria-expanded': String(open), 'aria-label': open ? 'Close the menu' : 'Open the menu' });
-    if (!focus) return;
-    if (open) $('#header_menu .menu-item.active span, #header_menu .menu-item span').first().trigger('focus');
-    else $('#menu_toggle').trigger('focus');
-}
-
-// The button of the header that opens the menu, and what closes it again
-function addMenuToggle() {
-    const bar = () => el('span', { class: 'menu-toggle-bar' });
-    $('#header').prepend(
-        el('button', { id: 'menu_toggle', type: 'button', 'aria-controls': 'header_menu_container', 'aria-expanded': 'false', 'aria-label': 'Open the menu' }, bar(), bar(), bar())
-            .on('click', () => setMenuOpen(!$('body').hasClass('menu-open'), { focus: true }))
-    );
-    $('#container').append(el('div', { id: 'menu_backdrop' }).on('click', () => setMenuOpen(false)));
-    $(document).on('keydown', (event) => {
-        if (event.key === 'Escape' && $('body').hasClass('menu-open') && !$('#myModal').is(':visible')) setMenuOpen(false, { focus: true });
-    });
-    // Wide enough for the sidebar again: nothing is left open behind it
-    window.matchMedia('(max-width: 999px)').addEventListener('change', () => setMenuOpen(false));
-}
-
+// The items of the menu: the pages without a group stand by themselves, every
+// group is an item with its pages as the entries of its submenu
 function buildMenu() {
     const items = menuList().filter(allowed);
+    const extras = new Map(); // the id of an item -> what is drawn on it
     menuItems.headerMenu.length = 0;
+
     for (const item of items) {
-        menuItems.headerMenu.push({ id: itemId(item), class: 'menu-item', text: '', inner_text: item.label });
+        if (!item.group) {
+            const id = itemId(item);
+            extras.set(id, { icon: 'dashboard' });
+            menuItems.headerMenu.push({ id, class: 'menu-item', text: '', inner_text: item.label });
+            continue;
+        }
+        const id = groupId(item.group);
+        let entry = menuItems.headerMenu.find((candidate) => candidate.id === id);
+        if (!entry) {
+            // The last group is the signed-in user, who is named by the name
+            const you = item.group === 'You';
+            entry = { id, class: 'menu-item', text: '', inner_text: you ? who() : item.group, children: [] };
+            menuItems.headerMenu.push(entry);
+            extras.set(id, { icon: GROUP_ICONS[item.group] || 'more', you, title: you ? 'Account' : item.group });
+        }
+        entry.children.push({ inner_text: item.label });
     }
+
     clearHeaderMenu();
     generateHeaderMenu();
     $('body').toggleClass('signed-in', Boolean(session.user));
     $('#header_menu_container').attr({ role: 'navigation', 'aria-label': 'Menu' });
 
-    // The name of a group stands before its first item; the last group is the signed-in user
-    const who = session.user ? session.user.displayName || session.user.username : '';
-    items.forEach((item, index) => {
-        if (!item.group || item.group === items[index - 1]?.group) return;
-        const $title = item.group === 'You'
-            ? el('li', { class: 'menu-group menu-user', role: 'presentation' }, el('strong', { text: who }), el('small', { text: session.user.role }))
-            : el('li', { class: 'menu-group', role: 'presentation', text: item.group });
-        $(`#${itemId(item)}`).before($title);
-    });
-    // Without accounts there is nothing below the name: it stands at the end by itself
-    if (session.user && !session.user.id) {
-        $('#header_menu').append(el('li', { class: 'menu-group menu-user', role: 'presentation' }, el('strong', { text: who }), el('small', { text: session.user.role })));
+    // An icon before every label; the user has the avatar of Athena UI instead
+    for (const [id, extra] of extras) {
+        const $item = $(`#${CSS.escape(id)}`);
+        const $label = $item.children('span').first();
+        const text = $label.text();
+        $label.empty().append(extra.you ? generateAvatar({ name: text, size: 'small' }) : icon(extra.icon), el('span', { class: 'menu-label', text }));
+        if (extra.you) $item.addClass('menu-end');
+        if (extra.title) $item.find('.submenu').attr('aria-label', extra.title);
     }
 
     // The items of Athena UI are clicked; make them reachable with the keyboard as well
-    $('#header_menu .menu-item span')
+    $('#header_menu > li:not(.has-submenu) > span')
         .attr({ role: 'link', tabindex: 0 })
         .on('keydown', (event) => {
             if (event.key === 'Enter' || event.key === ' ') {
@@ -139,6 +161,45 @@ function buildMenu() {
 
     showFooter();
     markActive();
+}
+
+///--- Look: the theme and the mode, chosen in the menu at the right of the header
+
+function addAppearanceMenu() {
+    const $tools = el('div', { id: 'header_tools' });
+    $('#header').append($tools);
+
+    const choose = (items, set) => items.map((item) => ({ label: item.name, onclick: () => set(item.id) }));
+    const dropdown = generateDropdown({
+        parent: $tools[0],
+        align: 'right',
+        label: '',
+        items: [...choose(THEMES, setTheme), { divider: true }, ...choose(MODES, setMode)],
+    });
+
+    // An icon button, and the names of the two parts of the menu
+    const toggle = dropdown.element.querySelector('.dropdown-toggle');
+    toggle.replaceChildren(icon('appearance'));
+    toggle.setAttribute('aria-label', 'Look of the interface');
+    toggle.title = 'Look of the interface';
+
+    const menu = dropdown.element.querySelector('.dropdown-menu');
+    const entries = [...menu.querySelectorAll('.dropdown-item')];
+    const heading = (text) => el('div', { class: 'dropdown-heading', role: 'presentation', text })[0];
+    entries[0].before(heading('Theme'));
+    menu.querySelector('.dropdown-divider').replaceWith(heading('Mode'));
+    entries.forEach((entry, index) => {
+        entry.dataset.choice = index < THEMES.length ? THEMES[index].id : MODES[index - THEMES.length].id;
+        if (index < THEMES.length) entry.title = THEMES[index].description;
+    });
+
+    // What is chosen is ticked. The ids of the themes and of the modes differ.
+    onAppearanceChange(({ theme, mode }) => {
+        for (const entry of entries) {
+            if (entry.dataset.choice === theme || entry.dataset.choice === mode) entry.setAttribute('aria-current', 'true');
+            else entry.removeAttribute('aria-current');
+        }
+    });
 }
 
 // The footer of Athena UI: the name of the server, its version and its build.
@@ -156,59 +217,65 @@ function showFooter() {
         .attr('title', build?.date ? `Built from the commit of ${new Date(build.date).toLocaleString()}` : null);
 }
 
+///--- Pages
+
 // Called by Athena UI with the label of the menu item that was clicked
 function nav(label) {
     const item = menuList().find((candidate) => candidate.label === label);
     if (!item) return; // Athena UI also calls it, without a label, while it builds the page
-    setMenuOpen(false);
     if (item.action) return item.action();
-    go(item.arg ? `#/${item.route}/${encodeURIComponent(item.arg)}` : `#/${item.route}`);
+    router.navigate(item.arg ? `/${item.route}/${encodeURIComponent(item.arg)}` : `/${item.route}`);
 }
 
-function go(hash) {
-    if (location.hash === hash) route();
-    else location.hash = hash;
-}
-
-let renders = 0;
+// Shows the page of the address again
+const reroute = () => router.navigate(location.hash.replace(/^#/, '') || '/');
 
 // The addresses of the pages before 2.3.0
 const MOVED = { blocklists: 'blocking' };
 
-async function route() {
+let renders = 0;
+
+// Before every page: who is allowed to see it. Returns false when something
+// else is shown instead, or the address to go to.
+function guard({ params }) {
     closeDialog();
-    setMenuOpen(false);
     // Errors stay until they are dismissed; the other notices belong to the page that is left
     $('.toast:not(.alert-error)').remove();
-    const [, page, id] = currentRoute();
-    if (!session.user) {
-        if (page === 'forgot' && session.info?.passwordReset) return showForgot();
-        if (page === 'reset' && id) return showReset(decodeURIComponent(id));
-        return showLogin();
-    }
-    if (MOVED[page]) {
-        location.replace(`#/${MOVED[page]}`);
-        return;
-    }
-    const item = menuList().find((candidate) => candidate.route === page && (!candidate.arg || candidate.arg === decodeURIComponent(id || '')) && allowed(candidate));
-    if (!item) {
-        location.replace('#/dashboard');
-        return;
-    }
+    const { page, id } = params;
 
+    if (!session.user) {
+        if (page === 'forgot' && session.info?.passwordReset) showForgot();
+        else if (page === 'reset' && id) showReset(id);
+        else showLogin();
+        return false;
+    }
+    if (MOVED[page]) return `/${MOVED[page]}`;
+    if (!menuList().some((candidate) => candidate.route === page && (!candidate.arg || candidate.arg === id) && allowed(candidate))) return '/dashboard';
+    return undefined;
+}
+
+async function showPage({ params }) {
+    const item = menuList().find((candidate) => candidate.route === params.page && (!candidate.arg || candidate.arg === params.id));
     markActive();
-    clearWrapper();
     window.scrollTo(0, 0);
+    document.title = `${item.label} · ${session.info?.name || 'Odin NS Manager'}`;
+
     const render = ++renders;
     const $page = el('div', { class: 'page' });
     $('#wrapper').append($page);
     try {
-        await item.render($page, decodeURIComponent(id || ''));
+        await item.render($page, params.id || '');
     } catch (err) {
         // A page that was left in the meantime does not report its failure
         if (render === renders && err?.status !== 401) $page.append(el('p', { class: 'empty', text: errorText(err) }));
     }
 }
+
+const router = createRouter({
+    routes: { '/:page': showPage, '/:page/:id': showPage },
+    notFound: () => router.navigate('/dashboard', { replace: true }),
+    beforeEach: guard,
+});
 
 ///--- Signing in and out
 
@@ -277,7 +344,7 @@ async function showReset(token) {
             if (raw.password !== raw.repeat) throw ui.fieldError('repeat', 'The two passwords are not the same');
             await api('POST', `/service/password-reset/${encodeURIComponent(token)}`, { body: values, quiet: true });
             history.replaceState(null, '', '#/login');
-            await route();
+            reroute();
             ui.notice('ok', 'Your password is changed. Sign in with it.');
         },
     });
@@ -300,7 +367,7 @@ async function login({ username, password }) {
         clearNotices();
         await loadPlugins();
         buildMenu();
-        route(); // the page that was asked for before signing in
+        reroute(); // the page that was asked for before signing in
     } catch (err) {
         notice('error', err.status === 401 ? 'Wrong username or password' : errorText(err));
         $('#loginForm-password-control').val('').trigger('focus');
@@ -315,7 +382,7 @@ function signedOut(message, kind = 'ok') {
     session.user = null;
     buildMenu();
     if (location.hash !== '#/login') history.replaceState(null, '', '#/login');
-    route();
+    reroute();
     if (message) notice(kind, message);
 }
 
@@ -361,17 +428,17 @@ async function start() {
     });
 
     $('#wrapper').before(el('div', { id: 'notices', 'aria-live': 'polite' }));
-    addMenuToggle();
+    addAppearanceMenu();
+    refreshTheme(); // the stylesheet is loaded now: the bar of the browser takes its color
     events.userChanged = buildMenu;
     events.signedOut = signedOut;
     onSessionEnd(() => {
         if (session.user) signedOut('Your session has ended. Sign in again.', 'info');
     });
-    $(window).on('hashchange', route);
 
     await loadPlugins();
     buildMenu();
-    await route();
+    router.start();
     if (!session.info) notice('error', 'The server can not be reached');
 }
 

@@ -1,12 +1,14 @@
 // The building blocks of the pages: elements, controls, tables, notices and
-// dialogs. Controls are made with the HTMLControlGenerator of Athena UI, and
-// the dialogs are shown in its modal.
+// dialogs. They are made with Athena UI: buttons, badges, cards, stats,
+// pagination, breadcrumbs, the fields of the forms, the toasts and the
+// dialogs; the plain controls with its HTMLControlGenerator. What a page asks
+// for is the same as before, so the pages do not know which is which.
 
 /* global $, HTMLControlGenerator */
 
-import { openModal, closeModal, showToast, showDialog as athenaDialog } from '../vendor/athena-ui/athena-ui.js';
-
-const MODAL_ID = 'myModal';
+import {
+    showToast, showDialog as athenaDialog, generateButton, generateBadge, generateCard, generatePagination, generateField, generateStat, generateBreadcrumbs,
+} from '../vendor/athena-ui/athena-ui.js';
 
 ///--- Elements
 
@@ -28,24 +30,26 @@ export function el(tag, props = {}, ...children) {
 
 export const control = (options) => HTMLControlGenerator.create(options);
 
-// A button that is disabled while its action runs; a failure is shown as a notice
+// A button that shows a spinner while its action runs; a failure is shown as a notice.
+// kind: 'primary', 'danger', 'small', or two of them.
 export function button(label, action, kind = '') {
-    const $button = control({
-        inputType: 'button',
-        value: label,
-        class: `button ${kind}`.trim(),
+    const kinds = kind.split(' ');
+    const generated = generateButton({
+        text: label,
+        variant: kinds.includes('danger') ? 'danger' : kinds.includes('primary') ? 'primary' : 'secondary',
+        size: kinds.includes('small') ? 'small' : undefined,
         onclick: async () => {
-            $button.prop('disabled', true);
+            generated.setLoading(true);
             try {
                 await action();
             } catch (err) {
                 showError(err);
             } finally {
-                $button.prop('disabled', false);
+                generated.setLoading(false);
             }
         },
     });
-    return $button;
+    return $(generated.element);
 }
 
 export function select(items, value, attributes = {}) {
@@ -56,8 +60,17 @@ export function select(items, value, attributes = {}) {
     }).attr(attributes);
 }
 
-export const badge = (text, kind = '') => el('span', { class: `badge ${kind}`.trim(), text });
+// kind: 'ok', 'warn' or 'danger'; without one the badge is neutral
+const BADGE_VARIANTS = { ok: 'success', warn: 'warning', danger: 'error' };
+export const badge = (text, kind = '') => $(generateBadge({ text, variant: BADGE_VARIANTS[kind] || 'neutral' }));
 export const activeBadge = (active) => (active ? badge('Active', 'ok') : badge('Inactive', 'warn'));
+
+// A figure of the dashboard: the stat of Athena UI, with a note below it
+export function stat(label, value, note) {
+    const { element } = generateStat({ label, value });
+    if (note) element.append(el('div', { class: 'tile-note muted', text: note })[0]);
+    return $(element);
+}
 
 ///--- Texts
 
@@ -124,11 +137,15 @@ export function table(columns, rows, empty = 'Nothing to show.') {
 export function pager(result, go) {
     const $pager = el('div', { class: 'pager' }, el('span', { text: `${result.total} in total` }));
     if (result.pages > 1) {
-        $pager.append(
-            button('Previous', () => go(result.page - 1), 'small').prop('disabled', result.page <= 1),
-            el('span', { text: `Page ${result.page} of ${result.pages}` }),
-            button('Next', () => go(result.page + 1), 'small').prop('disabled', result.page >= result.pages)
-        );
+        const pagination = generatePagination({
+            total: result.total,
+            // The pages of the API are the ones to show
+            pageSize: result.limit || Math.ceil(result.total / result.pages),
+            page: result.page,
+            label: 'Pages',
+            onChange: (page) => Promise.resolve(go(page)).catch(showError),
+        });
+        $pager.append(pagination.element);
     }
     return $pager;
 }
@@ -144,42 +161,10 @@ export function debounce(action, wait = 300) {
 
 ///--- Dialogs
 
-let returnFocusTo = null;
-
-function modalContent() {
-    if (!document.getElementById(MODAL_ID)) {
-        $('body').append(
-            el(
-                'div',
-                { id: MODAL_ID, class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'modal_title' },
-                el('div', { id: 'modal_content', class: 'modal-content' })
-            )
-        );
-        $(document).on('keydown', (event) => {
-            if (event.key === 'Escape' && $(`#${MODAL_ID}`).is(':visible')) closeDialog();
-        });
-    }
-    return $('#modal_content');
-}
-
-function showDialog(title, ...body) {
-    returnFocusTo = document.activeElement;
-    // Athena UI closes the modal when an element of the class "close" is clicked
-    const $close = el('span', { class: 'close', role: 'button', tabindex: 0, 'aria-label': 'Close', text: '×' })
-        .on('click', closeDialog)
-        .on('keydown', (event) => {
-            if (event.key === 'Enter' || event.key === ' ') closeDialog();
-        });
-    const $content = modalContent().empty().append($close, el('h2', { id: 'modal_title', text: title }), body);
-    openModal(MODAL_ID);
-    $content.find('input:enabled:not([readonly]), select:enabled').first().trigger('focus');
-}
-
+// A form in a dialog of Athena UI. The dialog has no buttons of its own: the
+// form has its own, and closes the dialog when it succeeds.
 export function closeDialog() {
-    closeModal(MODAL_ID);
-    $('#modal_content').empty();
-    returnFocusTo?.focus?.();
-    returnFocusTo = null;
+    document.querySelectorAll('.dialog-backdrop .dialog-close').forEach((closeButton) => closeButton.click());
 }
 
 function setPath(target, path, value) {
@@ -190,70 +175,55 @@ function setPath(target, path, value) {
     node[last] = value;
 }
 
-let fieldCount = 0;
-
-function buildField(field) {
-    const id = `field_${++fieldCount}`; // a page may hold more than one form
-    let $input;
-
-    if (field.type === 'select') {
-        $input = select(field.options, field.value, { id });
-    } else if (field.type === 'checkbox') {
-        $input = control({ inputType: 'checkbox', id, checked: Boolean(field.value) });
-    } else {
-        $input = control({
-            inputType: field.type || 'text',
-            id,
-            class: 'input',
-            value: field.value ?? undefined,
-            min: field.min,
-            max: field.max,
-        });
-    }
-    $input.attr({
-        placeholder: field.placeholder,
-        maxlength: field.maxlength,
-        autocomplete: field.autocomplete || 'off',
-        'aria-describedby': `${id}_error`,
+// One field of a form: the field of Athena UI, with what the pages need on top
+function buildField(def) {
+    const type = def.type || 'text';
+    const isSelect = type === 'select';
+    const label = (raw) => (typeof def.label === 'function' ? def.label(raw) : def.label);
+    const field = generateField({
+        name: def.name,
+        type,
+        label: label({}),
+        help: def.hint,
+        value: isSelect ? String(def.value ?? '') : def.value ?? undefined,
+        options: def.options?.map((option) => ({ ...option, value: String(option.value) })),
+        placeholder: def.placeholder,
+        min: def.min,
+        max: def.max,
+        maxLength: def.maxlength,
+        autocomplete: def.autocomplete || 'off',
+        disabled: Boolean(def.disabled),
+        required: Boolean(def.required) && type !== 'checkbox',
     });
-    $input.prop({ required: Boolean(field.required), disabled: Boolean(field.disabled) });
-
-    const $label = el('label', { for: id });
-    const $error = el('small', { id: `${id}_error`, class: 'field-error', role: 'alert' });
-    const $hint = field.hint ? el('small', { class: 'hint', text: field.hint }) : null;
-    const $row =
-        field.type === 'checkbox'
-            ? el('div', { class: 'field check' }, $label.append($input, el('span')), $hint, $error)
-            : el('div', { class: 'field' }, $label, $input, $hint, $error);
-    const $text = field.type === 'checkbox' ? $label.find('span') : $label;
-
-    return { field, $row, $input, $error, $text, visible: true };
+    // The text of the label, without the star that marks a required field
+    const caption = field.element.querySelector('.field-label-text');
+    return {
+        def,
+        field,
+        visible: true,
+        setLabel: (raw) => {
+            if (caption && caption.firstChild) caption.firstChild.nodeValue = label(raw);
+        },
+    };
 }
 
 // What is typed, by the name of the field
-function rawValues(rows) {
-    return Object.fromEntries(
-        rows.map(({ field, $input }) => [field.name, field.type === 'checkbox' ? $input.prop('checked') : $input.val()])
-    );
-}
+const rawValues = (rows) => Object.fromEntries(rows.map(({ def, field }) => [def.name, field.getValue()]));
 
 // The values to send: nested by the dots in the names of the fields. Fields
 // that are hidden, disabled or left empty are left out; a field with
 // blank: 'null' or blank: 'empty' sends null or '' when it is empty.
 function collectValues(rows) {
     const values = {};
-    for (const { field, $input, visible } of rows) {
-        if (!visible || field.disabled || field.send === false) continue;
+    for (const { def, field, visible } of rows) {
+        if (!visible || def.disabled || def.send === false) continue;
 
-        let value;
-        if (field.type === 'checkbox') {
-            value = $input.prop('checked');
-        } else {
-            const raw = field.type === 'password' ? $input.val() : String($input.val() ?? '').trim();
-            if (raw === '') value = { null: null, empty: '' }[field.blank];
-            else value = field.type === 'number' ? Number(raw) : raw;
+        let value = field.getValue();
+        if (def.type !== 'checkbox') {
+            if (typeof value === 'string' && def.type !== 'password') value = value.trim();
+            if (value === '' || value === undefined || Number.isNaN(value)) value = { null: null, empty: '' }[def.blank];
         }
-        if (value !== undefined) setPath(values, field.name, value);
+        if (value !== undefined) setPath(values, def.name, value);
     }
     return values;
 }
@@ -263,40 +233,40 @@ function collectValues(rows) {
 //            disabled, blank, show: (raw) => boolean }] - label may be a function of the raw values.
 // onSubmit(values, raw) saves; when it fails with details: { field: message },
 // the messages are shown at their fields.
-// inDialog: the form is the content of the modal, which closes when it succeeds.
+// inDialog: the form is the content of a dialog, which closes when it succeeds.
 // Otherwise it stays on its page; with `clear` it is emptied when it succeeds.
 function buildForm({ intro, fields, submitLabel = 'Save', onSubmit, inDialog = false, clear = false }) {
     const rows = fields.map(buildField);
     const $error = el('p', { class: 'form-error', role: 'alert' }).hide();
-    const $submit = control({ inputType: 'submit', value: submitLabel, class: 'button primary' });
+    const submit = generateButton({ text: submitLabel, variant: 'primary', type: 'submit' });
     const $form = el(
         'form',
-        { class: inDialog ? 'form' : 'form inline' },
+        { class: inDialog ? 'athena-form form' : 'athena-form form inline', novalidate: true },
         intro ? el('p', { class: 'hint', text: intro }) : null,
         $error,
-        rows.map((row) => row.$row),
-        el('div', { class: 'actions' }, $submit, inDialog ? button('Cancel', closeDialog) : null)
+        rows.map((row) => row.field.element),
+        el('div', { class: 'actions' }, submit.element, inDialog ? generateButton({ text: 'Cancel', variant: 'secondary', onclick: closeDialog }).element : null)
     );
 
     const arrange = () => {
         const raw = rawValues(rows);
         for (const row of rows) {
-            row.visible = !row.field.show || Boolean(row.field.show(raw));
-            row.$row.toggle(row.visible);
+            row.visible = !row.def.show || Boolean(row.def.show(raw));
+            $(row.field.element).toggle(row.visible);
             // A hidden field must not stop the form from being sent
-            row.$input.prop('disabled', !row.visible || Boolean(row.field.disabled));
-            row.$text.text(typeof row.field.label === 'function' ? row.field.label(raw) : row.field.label);
+            $(row.field.element).find('input, select, textarea').prop('disabled', !row.visible || Boolean(row.def.disabled));
+            row.setLabel(raw);
         }
     };
 
     const showFailure = (err) => {
         const messages = [];
         for (const [name, message] of Object.entries(err.details && typeof err.details === 'object' ? err.details : {})) {
-            const row = rows.find((candidate) => candidate.field.name === name && candidate.visible);
-            if (row) row.$error.text(message);
+            const row = rows.find((candidate) => candidate.def.name === name && candidate.visible);
+            if (row) row.field.setError(message);
             else messages.push(message);
         }
-        const shown = rows.some((row) => row.$error.text());
+        const shown = $form.find('.field-error').filter((_, node) => node.textContent).length > 0;
         const text = [shown && !messages.length ? '' : err.message, ...messages].filter(Boolean).join(': ');
         $error.text(text || 'Check the marked fields').show();
     };
@@ -305,13 +275,22 @@ function buildForm({ intro, fields, submitLabel = 'Save', onSubmit, inDialog = f
     $form.on('submit', async (event) => {
         event.preventDefault();
         $error.hide();
-        rows.forEach((row) => row.$error.text(''));
-        $submit.prop('disabled', true);
+        rows.forEach((row) => row.field.setError(''));
+
+        // The fields are checked as they are filled in; what is not valid stops the form
+        const invalid = rows.filter((row) => row.visible && !row.def.disabled && row.field.validate());
+        if (invalid.length) {
+            invalid[0].field.focus();
+            return;
+        }
+
+        submit.setLoading(true);
         try {
             await onSubmit(collectValues(rows), rawValues(rows));
             if (inDialog) closeDialog();
             else if (clear) {
                 $form[0].reset();
+                rows.forEach((row) => row.field.resetState());
                 arrange();
             }
         } catch (err) {
@@ -319,7 +298,7 @@ function buildForm({ intro, fields, submitLabel = 'Save', onSubmit, inDialog = f
             if (err?.status !== 401) showFailure(err);
             else if (inDialog) closeDialog();
         } finally {
-            $submit.prop('disabled', false);
+            submit.setLoading(false);
         }
     });
 
@@ -327,9 +306,11 @@ function buildForm({ intro, fields, submitLabel = 'Save', onSubmit, inDialog = f
     return $form;
 }
 
-// A form in the modal; see buildForm
+// A form in a dialog; see buildForm
 export function formDialog({ title, ...form }) {
-    showDialog(title, buildForm({ ...form, inDialog: true }));
+    const $form = buildForm({ ...form, inDialog: true });
+    athenaDialog({ title, content: $form[0], buttons: [] });
+    $form.find('input:enabled:not([readonly]), select:enabled').first().trigger('focus');
 }
 
 // A form on the page; see buildForm
@@ -371,18 +352,20 @@ export function fieldError(name, message) {
 export const PAGE_SIZE = 20;
 
 export const link = (href, text) => el('a', { href, text });
+export function breadcrumbs(...items) {
+    const holder = document.createElement('div');
+    generateBreadcrumbs({ parent: holder, items });
+    return $(holder.firstElementChild);
+}
 export const head = (title, ...actions) => el('div', { class: 'toolbar page-head' }, el('h2', { text: title }), el('span', { class: 'spacer' }), actions);
 export const options = (pairs) => pairs.map(([value, text]) => ({ value, text }));
 export const fact = (term, value) => el('span', {}, el('span', { text: `${term}: ` }), value);
 
+// A card with a list of facts, and actions (buttons, links) in its footer
 export function card(title, rows, ...actions) {
-    return el(
-        'section',
-        { class: 'card' },
-        el('h3', { text: title }),
-        el('dl', {}, rows.map(([term, value]) => [el('dt', { text: term }), el('dd', {}, value)])),
-        actions.filter(Boolean).length ? el('div', { class: 'actions' }, actions) : null
-    );
+    const $facts = el('dl', {}, rows.map(([term, value]) => [el('dt', { text: term }), el('dd', {}, value)]));
+    const footer = actions.filter(Boolean).flatMap((action) => (action.jquery ? action.get() : [action]));
+    return $(generateCard({ title, content: $facts[0], footer: footer.length ? footer : undefined }).element);
 }
 
 export function searchBox(placeholder, onSearch, value = '') {

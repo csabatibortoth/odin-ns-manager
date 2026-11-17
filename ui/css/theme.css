@@ -1,60 +1,38 @@
-/* Odin NS Manager: a theme for Athena UI. It styles the blocks Athena UI
-   generates (container, header, menu, wrapper, footer, login form, modal)
-   and the pages of the manager. */
+/* Odin NS Manager: the stylesheet of the user interface.
+
+   It builds on the default theme of Athena UI, so every component Athena UI
+   generates (tabs, cards, stats, pagination, forms, dialogs, ...) has a
+   style, and gives that theme the colors of the chosen manager theme: the
+   colors are the variables of themes.css. This file holds no color of its
+   own, so a new theme is a new block in themes.css. */
+
+@import url("../vendor/athena-ui/res/themes/default/style.css");
+@import url("themes.css");
 
 :root {
-    color-scheme: light dark;
     --header-h: 56px;
-    --menu-w: 228px;
-    --bg: #f4f6f8;
-    --surface: #fff;
-    --surface-2: #eef1f4;
-    --text: #1c2530;
-    --muted: #5d6b7a;
-    --border: #d5dbe1;
-    --accent: #1f4e79;
-    --accent-text: #fff;
-    --link: #1a5a96;
-    --danger: #b3261e;
-    --ok: #1d6b3a;
-    --warn: #8a5a00;
-    --ok-bg: #e2f3e8;
-    --warn-bg: #fdf1d3;
-    --danger-bg: #fbe4e2;
-    --shadow: 0 1px 2px rgb(0 0 0 / 8%);
-    /* The series of the graphs, in their fixed order; checked against --surface */
-    --series-1: #2a78d6;
-    --series-2: #eb6834;
-    --series-3: #1baf7a;
-    --series-4: #eda100;
-    --chart-grid: #e6eaee;
-    --chart-axis: #c2cad3;
-}
+    --bar-h: 64px;
+    --radius: 8px;
 
-@media (prefers-color-scheme: dark) {
-    :root {
-        --bg: #12171d;
-        --surface: #1b222b;
-        --surface-2: #242d38;
-        --text: #e4e9ee;
-        --muted: #9aa7b4;
-        --border: #34404d;
-        --accent: #2f6ea8;
-        --link: #7db7ea;
-        --danger: #f08a82;
-        --ok: #7fd09a;
-        --warn: #f0c060;
-        --ok-bg: #1b3526;
-        --warn-bg: #3a2f12;
-        --danger-bg: #41201d;
-        --shadow: none;
-        --series-1: #3987e5;
-        --series-2: #d95926;
-        --series-3: #199e70;
-        --series-4: #c98500;
-        --chart-grid: #2a333e;
-        --chart-axis: #3d4957;
-    }
+    /* Athena UI reads these; they are made of the colors of the theme */
+    --athena-bg: var(--surface);
+    --athena-fg: var(--text);
+    --athena-muted: var(--muted);
+    --athena-border: var(--border);
+    --athena-line: var(--border);
+    --athena-surface: var(--surface-2);
+    --athena-surface-alt: var(--surface-2);
+    --athena-hover: var(--surface-2);
+    --athena-overlay: rgb(0 0 0 / 50%);
+    --athena-accent: var(--accent);
+    --athena-accent-fg: var(--accent-text);
+    --athena-danger: var(--danger);
+    --athena-success: var(--ok);
+    --athena-warning: var(--warn);
+    --athena-info: var(--link);
+    --athena-radius: var(--radius);
+    --athena-shadow: 0 6px 20px rgb(0 0 0 / 22%);
+    --grid-gap: 16px;
 }
 
 * {
@@ -83,7 +61,7 @@ h3 {
 }
 
 :focus-visible {
-    outline: 2px solid var(--link);
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
 }
 
@@ -93,6 +71,7 @@ h3 {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+    min-height: 100dvh;
 }
 
 .header-container {
@@ -102,19 +81,31 @@ h3 {
     display: flex;
     align-items: center;
     gap: 12px;
+    width: auto;
     height: var(--header-h);
     padding: 0 20px;
-    background: var(--accent);
-    color: var(--accent-text);
+    background: var(--header-bg);
+    color: var(--header-text);
+}
+
+.header-container :focus-visible {
+    outline-color: var(--header-text);
+}
+
+#header_logo_container {
+    flex: none;
+    line-height: 0;
 }
 
 #header_title_logo {
     display: block;
-    width: 34px;
-    height: 34px;
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
 }
 
 #header_title_container {
+    flex: none;
     min-width: 0;
 }
 
@@ -127,201 +118,18 @@ h3 {
     white-space: nowrap;
 }
 
-/* Menu: the menu of Athena UI as a sidebar next to the content. Where the
-   screen is too narrow for that it is a drawer, opened with #menu_toggle. */
-
-#header_menu_container {
-    position: fixed;
-    top: var(--header-h);
-    bottom: 0;
-    left: 0;
-    z-index: 50;
-    width: var(--menu-w);
-    padding: 12px 10px 24px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    border-right: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
-}
-
-/* Nobody is signed in: there is no menu */
-body:not(.signed-in) #header_menu_container {
-    display: none;
-}
-
-body.signed-in #container {
-    padding-left: var(--menu-w);
-}
-
-body.signed-in .header-container {
-    margin-left: calc(-1 * var(--menu-w));
-}
-
-.menu {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-.menu-group {
-    margin-top: 14px;
-    padding: 4px 12px;
-    color: var(--muted);
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-}
-
-.menu-user {
-    margin-top: 16px;
-    padding-top: 14px;
-    border-top: 1px solid var(--border);
-    letter-spacing: 0;
-    text-transform: none;
-}
-
-.menu-user strong {
-    display: block;
-    overflow: hidden;
-    color: var(--text);
-    font-size: 0.9rem;
-    text-overflow: ellipsis;
-}
-
-.menu-user small {
-    font-size: 0.8rem;
-    font-weight: normal;
-}
-
-.header-menu .menu-item span {
-    display: block;
-    padding: 8px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    user-select: none;
-}
-
-.header-menu .menu-item span:hover {
-    background: var(--surface-2);
-}
-
-.header-menu .menu-item.active span {
-    background: var(--accent);
-    color: var(--accent-text);
-    font-weight: 600;
-}
-
-#menu_toggle {
-    display: none;
-    flex: none;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    width: 42px;
-    height: 42px;
-    margin-left: -8px;
-    padding: 0;
-    border: 0;
-    border-radius: 8px;
-    background: none;
-    color: inherit;
-    cursor: pointer;
-}
-
-#menu_toggle:hover {
-    background: rgb(255 255 255 / 16%);
-}
-
-#menu_toggle:focus-visible {
-    outline-color: #fff;
-}
-
-.menu-toggle-bar {
-    display: block;
-    width: 22px;
-    height: 2px;
-    border-radius: 2px;
-    background: currentcolor;
-    transition: transform 0.2s, opacity 0.2s;
-}
-
-/* The three bars become a cross while the menu is open */
-.menu-open .menu-toggle-bar:nth-child(1) { transform: translateY(7px) rotate(45deg); }
-.menu-open .menu-toggle-bar:nth-child(2) { opacity: 0; }
-.menu-open .menu-toggle-bar:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
-
-#menu_backdrop {
-    display: none;
-}
-
-@media (max-width: 999px) {
-    body.signed-in #container {
-        padding-left: 0;
-    }
-
-    body.signed-in .header-container {
-        margin-left: 0;
-    }
-
-    body.signed-in #menu_toggle {
-        display: flex;
-    }
-
-    #header_menu_container {
-        width: min(86vw, 300px);
-        box-shadow: 4px 0 18px rgb(0 0 0 / 25%);
-        /* Hidden, not only moved away: its items are not reached with the keyboard while it is closed */
-        visibility: hidden;
-        transform: translateX(-100%);
-        transition: transform 0.2s ease, visibility 0.2s;
-    }
-
-    .menu-open #header_menu_container {
-        visibility: visible;
-        transform: none;
-    }
-
-    .menu-open #menu_backdrop {
-        display: block;
-        position: fixed;
-        inset: var(--header-h) 0 0 0;
-        z-index: 40;
-        background: rgb(0 0 0 / 45%);
-    }
-
-    /* The page behind the open menu stays where it is */
-    body.menu-open {
-        overflow: hidden;
-    }
-
-    /* Large enough for a finger */
-    .header-menu .menu-item span {
-        padding: 11px 12px;
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    #header_menu_container,
-    .menu-toggle-bar {
-        transition: none;
-    }
-}
-
 .wrapper-container {
     flex: 1;
     width: 100%;
     max-width: 1180px;
+    height: auto;
     margin: 0 auto;
     padding: 24px;
 }
 
 .footer-container {
+    width: auto;
+    height: auto;
     padding: 10px 24px;
     border-top: 1px solid var(--border);
     color: var(--muted);
@@ -334,117 +142,395 @@ body.signed-in .header-container {
     font-weight: normal;
 }
 
+/* Icons: drawn with the color of the text around them */
+
+.icon {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentcolor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.icon .solid {
+    fill: currentcolor;
+    stroke: none;
+}
+
+/* Menu: the menu of Athena UI, with its submenus. On a wide screen it is the
+   bar of the header, and every group opens as a dropdown. On a tablet and a
+   phone it is a bar of tabs at the bottom of the screen, and every group
+   opens as a sheet above it. Nobody is signed in: there is no menu. */
+
+body:not(.signed-in) #header_menu_container {
+    display: none;
+}
+
+body:not(.signed-in) #header_tools {
+    margin-left: auto;
+}
+
+#header_menu_container {
+    flex: 1;
+    min-width: 0;
+    align-self: stretch;
+    display: flex;
+}
+
+.header-menu {
+    display: flex;
+    flex: 1;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.header-menu > li {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    margin: 0;
+}
+
+.header-menu > li > span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 14px 0;
+    border-bottom: 3px solid transparent;
+    color: inherit;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.header-menu > li > span:hover,
+.header-menu > li > span[aria-expanded="true"] {
+    background: rgb(255 255 255 / 14%);
+}
+
+.header-menu > li.active > span {
+    border-bottom-color: var(--header-accent);
+    font-weight: 600;
+}
+
+.menu-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The arrow of a group: drawn here instead of the character of Athena UI */
+.menu-parent::after {
+    content: "";
+    width: 6px;
+    height: 6px;
+    margin: -3px 0 0 2px;
+    border: solid currentcolor;
+    border-width: 0 2px 2px 0;
+    font-size: inherit;
+    transform: rotate(45deg);
+}
+
+.header-menu .menu-end {
+    margin-left: auto;
+}
+
+.header-menu .avatar {
+    width: 28px;
+    height: 28px;
+    background: var(--header-text);
+    color: var(--header-bg);
+    font-size: 0.75rem;
+}
+
+.submenu {
+    min-width: 220px;
+    margin-top: 0;
+    padding: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+}
+
+.menu-end .submenu {
+    right: 0;
+    left: auto;
+}
+
+.submenu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    border-radius: 6px;
+}
+
+.submenu-item:hover:not([aria-disabled="true"]),
+.submenu-item:focus {
+    background: var(--surface-2);
+    outline: none;
+}
+
+.submenu-item[aria-current="page"] {
+    box-shadow: inset 3px 0 0 var(--accent);
+    font-weight: 600;
+}
+
+/* The tools at the right of the header: the look of the interface */
+
+#header_tools {
+    flex: none;
+}
+
+#header_tools .dropdown-toggle {
+    width: 40px;
+    height: 40px;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+}
+
+#header_tools .dropdown-toggle:hover:not(:disabled) {
+    background: rgb(255 255 255 / 14%);
+    filter: none;
+}
+
+#header_tools .dropdown-menu {
+    min-width: 200px;
+    margin-top: 6px;
+    padding: 6px;
+    color: var(--text);
+}
+
+.dropdown-heading {
+    padding: 6px 12px 2px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.dropdown-item {
+    border-radius: 6px;
+}
+
+/* The choice that is made in the menu of the look */
+.dropdown-item[aria-current="true"]::before {
+    content: "\2713";
+    display: inline-block;
+    width: 1.3em;
+    margin-left: -0.2em;
+    color: var(--accent);
+    font-weight: 700;
+}
+
+.dropdown-item:not([aria-current="true"])[data-choice]::before {
+    content: "";
+    display: inline-block;
+    width: 1.3em;
+    margin-left: -0.2em;
+}
+
+@media (max-width: 999px) {
+    .header-container {
+        padding: 0 14px;
+    }
+
+    #header_tools {
+        margin-left: auto;
+    }
+
+    body.signed-in #header_menu_container {
+        position: fixed;
+        z-index: 70;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        align-self: auto;
+        height: calc(var(--bar-h) + env(safe-area-inset-bottom));
+        padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        background: var(--header-bg);
+        color: var(--header-text);
+        box-shadow: 0 -2px 12px rgb(0 0 0 / 22%);
+    }
+
+    .header-menu {
+        gap: 0;
+    }
+
+    .header-menu > li {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    .header-menu > li > span {
+        flex-direction: column;
+        justify-content: center;
+        gap: 2px;
+        width: 100%;
+        padding: 4px 2px;
+        border-top: 3px solid transparent;
+        border-bottom: 0;
+        font-size: 0.72rem;
+        line-height: 1.2;
+    }
+
+    .header-menu > li.active > span {
+        border-top-color: var(--header-accent);
+    }
+
+    .header-menu .menu-label {
+        max-width: 100%;
+    }
+
+    .menu-parent::after {
+        display: none;
+    }
+
+    .header-menu .menu-end {
+        margin-left: 0;
+    }
+
+    /* The sheet of a group, above the bar */
+    .submenu,
+    .menu-end .submenu {
+        position: fixed;
+        z-index: 1;
+        right: 0;
+        bottom: calc(var(--bar-h) + env(safe-area-inset-bottom));
+        left: 0;
+        top: auto;
+        max-width: 600px;
+        max-height: 70vh;
+        margin: 0 auto;
+        padding: 6px 8px 10px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        border-bottom: 0;
+        border-radius: 16px 16px 0 0;
+        box-shadow: 0 -8px 28px rgb(0 0 0 / 30%);
+    }
+
+    .submenu::before {
+        content: attr(aria-label);
+        display: block;
+        padding: 8px 12px 6px;
+        color: var(--muted);
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+
+    /* Large enough for a finger */
+    .submenu-item {
+        min-height: 48px;
+        padding: 12px;
+        font-size: 1rem;
+    }
+
+    /* The page behind the sheet is dimmed; a touch on it closes the sheet */
+    body:has(#header_menu .submenu:not([hidden]))::after {
+        content: "";
+        position: fixed;
+        z-index: 65;
+        inset: 0;
+        background: rgb(0 0 0 / 45%);
+    }
+
+    body.signed-in .footer-container {
+        padding-bottom: calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px);
+    }
+
+    .toast-container {
+        top: calc(var(--header-h) + 8px);
+    }
+}
+
+@media (min-width: 640px) and (max-width: 999px) {
+    .header-menu > li > span {
+        font-size: 0.8rem;
+    }
+
+    .icon {
+        width: 22px;
+        height: 22px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
 /* Toasts and dialogs of Athena UI: the notices and the questions */
 
 .toast-container {
-    position: fixed;
     top: calc(var(--header-h) + 12px);
-    right: 16px;
-    z-index: 2000;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
     width: min(380px, calc(100vw - 32px));
 }
 
 .toast {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 14px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-left-width: 5px;
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+}
+
+.toast.alert-success {
+    border-color: var(--ok);
     background: var(--ok-bg);
     color: var(--ok);
-    box-shadow: 0 4px 14px rgb(0 0 0 / 18%);
 }
 
 .toast.alert-error {
+    border-color: var(--danger);
     background: var(--danger-bg);
     color: var(--danger);
 }
 
 .toast.alert-warning,
 .toast.alert-info {
+    border-color: var(--warn);
     background: var(--warn-bg);
     color: var(--warn);
 }
 
 .alert-close {
-    border: 0;
-    background: none;
     color: inherit;
-    font-size: 1.1rem;
-    line-height: 1;
-    cursor: pointer;
-}
-
-.dialog-backdrop {
-    display: block;
-    z-index: 1000;
 }
 
 .dialog {
-    position: relative;
-}
-
-.dialog-close {
-    position: absolute;
-    top: 8px;
-    right: 12px;
-    border: 0;
-    background: none;
-    color: var(--muted);
-    font-size: 1.6rem;
-    line-height: 1;
-    cursor: pointer;
+    padding: 20px 22px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
 }
 
 .dialog-title {
-    margin: 0 28px 12px 0;
     font-size: 1.15rem;
 }
 
-.dialog-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 16px;
+.dialog-close {
+    color: var(--muted);
 }
 
-.athena-button {
-    padding: 7px 14px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--surface);
-    color: var(--text);
-    font: inherit;
-    cursor: pointer;
-}
+/* Buttons: the ones of Athena UI, and .button of the plain controls */
 
-.athena-button:hover {
-    background: var(--surface-2);
-}
-
-.athena-button.button-primary {
-    border-color: var(--accent);
-    background: var(--accent);
-    color: var(--accent-text);
-}
-
-.athena-button.button-danger {
-    border-color: var(--danger);
-    color: var(--danger);
-}
-
-.athena-button:disabled {
-    opacity: 0.6;
-    cursor: default;
-}
-
-/* Controls */
-
+.athena-button,
 .button,
 .button-filed-class {
     padding: 7px 14px;
@@ -456,11 +542,14 @@ body.signed-in .header-container {
     cursor: pointer;
 }
 
+.athena-button:hover:not(:disabled),
 .button:hover,
 .button-filed-class:hover {
     background: var(--surface-2);
+    filter: none;
 }
 
+.athena-button.button-primary,
 .button.primary,
 .button-filed-class {
     border-color: var(--accent);
@@ -468,30 +557,67 @@ body.signed-in .header-container {
     color: var(--accent-text);
 }
 
+.athena-button.button-primary:hover:not(:disabled),
 .button.primary:hover,
 .button-filed-class:hover {
-    filter: brightness(1.12);
     background: var(--accent);
+    filter: brightness(1.15);
 }
 
+.athena-button.button-danger,
 .button.danger {
     border-color: var(--danger);
+    background: var(--surface);
     color: var(--danger);
 }
 
+.athena-button.button-danger:hover:not(:disabled),
+.button.danger:hover {
+    background: var(--danger-bg);
+}
+
+.athena-button.button-link {
+    border-color: transparent;
+    background: none;
+    color: var(--link);
+}
+
+.athena-button.button-small,
 .button.small {
     padding: 3px 10px;
     font-size: 0.85rem;
 }
 
+.athena-button:disabled,
 .button:disabled,
 .button-filed-class:disabled {
     opacity: 0.55;
     cursor: default;
 }
 
+/* Large enough for a finger on a touch screen */
+@media (pointer: coarse) {
+    .athena-button,
+    .button,
+    .input,
+    .page-button,
+    .tab {
+        min-height: 40px;
+    }
+
+    .athena-button.button-small,
+    .button.small {
+        min-height: 34px;
+    }
+}
+
+/* Controls */
+
 .input,
-.text-filed-class {
+.text-filed-class,
+.athena-form input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+.athena-form select,
+.athena-form textarea {
     width: 100%;
     padding: 7px 10px;
     border: 1px solid var(--border);
@@ -501,7 +627,9 @@ body.signed-in .header-container {
     font: inherit;
 }
 
-.input:disabled {
+.input:disabled,
+.athena-form input:disabled,
+.athena-form select:disabled {
     background: var(--surface-2);
     color: var(--muted);
 }
@@ -622,8 +750,9 @@ body.signed-in .header-container {
 
 .pager {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
     gap: 10px;
     margin-top: 12px;
     color: var(--muted);
@@ -638,29 +767,38 @@ body.signed-in .header-container {
     text-align: center;
 }
 
+/* Badges: generated by Athena UI, as tints of the status colors */
+
 .badge {
     display: inline-block;
     padding: 1px 9px;
+    border: 0;
     border-radius: 999px;
     background: var(--surface-2);
     color: var(--muted);
     font-size: 0.8rem;
+    font-weight: normal;
     white-space: nowrap;
 }
 
-.badge.ok {
+.badge-success {
     background: var(--ok-bg);
     color: var(--ok);
 }
 
-.badge.warn {
+.badge-warning {
     background: var(--warn-bg);
     color: var(--warn);
 }
 
-.badge.danger {
+.badge-error {
     background: var(--danger-bg);
     color: var(--danger);
+}
+
+.badge-info {
+    background: var(--surface-2);
+    color: var(--link);
 }
 
 .muted {
@@ -671,9 +809,34 @@ body.signed-in .header-container {
     font-family: ui-monospace, Consolas, monospace;
 }
 
-.breadcrumb {
+.breadcrumbs {
     margin: 0 0 8px;
     font-size: 0.9rem;
+}
+
+/* Tabs: a row that is scrolled sideways when it does not fit */
+
+.tab-list {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.tab {
+    flex: none;
+    white-space: nowrap;
+}
+
+.tab-active {
+    border-bottom-color: var(--accent);
+}
+
+.tab-panel {
+    padding: 16px 0 0;
+}
+
+.tab-panel:focus-visible {
+    outline-offset: -2px;
 }
 
 /* Cards */
@@ -688,9 +851,25 @@ body.signed-in .header-container {
 .card {
     padding: 16px 18px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius);
     background: var(--surface);
     box-shadow: var(--shadow);
+}
+
+/* A card of Athena UI: the padding is the one of the card */
+.card .card-body {
+    padding: 0;
+}
+
+.card .card-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    align-items: center;
+    justify-content: flex-end;
+    margin: 14px -18px -16px;
+    padding: 10px 18px;
+    background: var(--surface-2);
 }
 
 .card dl {
@@ -710,10 +889,6 @@ body.signed-in .header-container {
     overflow-wrap: break-word;
 }
 
-.card .actions {
-    margin-top: 12px;
-    text-align: right;
-}
 
 /* Five cards: three and two, not four and one */
 .cards.state {
@@ -728,26 +903,26 @@ body.signed-in .header-container {
 /* Dashboard: figures and graphs */
 
 .tiles {
-    display: grid;
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: 16px;
     margin-bottom: 16px;
 }
 
-.tile {
+/* A figure: the stat of Athena UI */
+
+.tiles .stat {
     padding: 14px 18px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius);
     background: var(--surface);
     box-shadow: var(--shadow);
 }
 
-.tile-label {
+.tiles .stat-label {
     color: var(--muted);
     font-size: 0.85rem;
 }
 
-.tile-value {
+.tiles .stat-value {
     font-size: 1.7rem;
     font-weight: 600;
     line-height: 1.3;
@@ -995,32 +1170,40 @@ body.signed-in .header-container {
     overflow-wrap: anywhere;
 }
 
-/* Forms */
+/* Forms: the fields of Athena UI */
+
+.form.athena-form {
+    max-width: none;
+    gap: 0;
+}
 
 .form .field {
     margin-bottom: 12px;
 }
 
-.form label {
+.form .field-label {
     display: block;
-    margin-bottom: 3px;
-    font-weight: 600;
 }
 
-.form .field.check label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-weight: normal;
-}
-
+.form .field-help,
 .form .hint {
     display: block;
     color: var(--muted);
     font-size: 0.85rem;
 }
 
-.form .field-error,
+.form .field-error {
+    font-size: 0.9rem;
+}
+
+.form .choice {
+    font-weight: normal;
+}
+
+.form .field-group {
+    background: var(--surface);
+}
+
 .form-error {
     display: block;
     color: var(--danger);
@@ -1088,40 +1271,27 @@ body.signed-in .header-container {
     width: 100%;
 }
 
-/* Modal: opened and closed by Athena UI */
+/* The backdrop of a dialog of Athena UI. It asks for display: block with a style
+   attribute, which the content security policy does not allow: it is done here. */
 
-.modal {
-    display: none;
+.modal.dialog-backdrop {
+    display: block;
     position: fixed;
-    z-index: 100;
+    z-index: 1000;
     inset: 0;
     padding: 6vh 16px 24px;
     overflow: auto;
-    background: rgb(0 0 0 / 50%);
+    background: var(--athena-overlay);
 }
 
 .modal-content {
     max-width: 560px;
     margin: 0 auto;
-    padding: 20px 22px;
-    border: 1px solid var(--border);
     border-radius: 10px;
-    background: var(--surface);
 }
 
-.close {
-    float: right;
-    padding: 0 4px;
-    border-radius: 4px;
-    color: var(--muted);
-    font-size: 1.6rem;
-    line-height: 1;
-    cursor: pointer;
-}
-
-.close:hover,
-.close:focus-visible {
-    color: var(--text);
+.dialog-footer:empty {
+    display: none;
 }
 
 /* New in the pages */
@@ -1160,7 +1330,7 @@ body.signed-in .header-container {
     padding: 14px;
 }
 
-.card .field-error {
+.card .field-error:not(:empty) {
     display: block;
     margin: 12px 0 0;
     color: var(--danger);
@@ -1207,11 +1377,11 @@ input[type="file"].input {
         gap: 10px;
     }
 
-    .tile {
+    .tiles .stat {
         padding: 10px 12px;
     }
 
-    .tile-value {
+    .tiles .stat-value {
         font-size: 1.35rem;
     }
 
@@ -1226,11 +1396,12 @@ input[type="file"].input {
         justify-content: space-between;
     }
 
-    .modal {
-        padding: 12px 8px;
+    .modal.dialog-backdrop {
+        padding: 8vh 8px 8px;
     }
 
-    .modal-content {
+    .dialog {
+        width: 100%;
         padding: 16px 14px;
     }
 

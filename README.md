@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.4.0** - see the [release notes](#release-notes).
+Current version: **2.5.0** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -42,6 +42,7 @@ It brings four packages together:
 | Plugins that extend the server | Available |
 | Zone transfers (AXFR) to secondary servers | Planned |
 | User interface in the browser | Available |
+| Themes: Default and Aesir, each in a light and a dark mode | Available |
 
 A query for a name of one of its own zones is answered by the server itself;
 every other query is forwarded to the upstream DNS servers. The zones, the users
@@ -520,17 +521,47 @@ The user interface is served by the HTTP(S) server of the management API, at
 `http://localhost:45451` by default, and works with the same accounts. It is
 built on [Athena UI](https://github.com/csabatibortoth/athena-ui) and jQuery,
 which are served from their packages: the page loads nothing from other servers.
-It follows the light or dark mode of the system.
+The pages are made of the components of Athena UI: its menu with submenus,
+tabs, cards, stats, badges, buttons, pagination, breadcrumbs, the fields of the
+forms, toasts and dialogs, and its router.
 
-The menu is a sidebar next to the content. On a screen that is narrower than
-1000 pixels it is a drawer, opened with the menu button of the header; and on a
-phone the rows of the tables are shown as blocks, so nothing has to be scrolled
-sideways.
+The menu has the groups Dashboard, DNS, Monitoring, Service and, for the
+signed-in user, their name:
+
+- **On a wide screen** (1000 pixels and more) it is the bar of the header, and
+  every group opens as a dropdown. The user menu, with the account and signing
+  out, is at the right end of it.
+- **On a tablet and a phone** it is a bar of tabs at the bottom of the screen,
+  within reach of the thumb. A group opens as a sheet above the bar, and a
+  touch anywhere else closes it.
+
+On a phone the rows of the tables are shown as blocks, so nothing has to be
+scrolled sideways.
 
 | | | |
 | --- | --- | --- |
 | ![The dashboard on a phone](docs/screenshots/mobile-dashboard.png) | ![The menu on a phone](docs/screenshots/mobile-menu.png) | ![The records of a zone on a phone](docs/screenshots/mobile-records.png) |
-| **Dashboard** on a phone | **The menu**, opened with the button of the header | **A table**: every row is a block |
+| **Dashboard** on a phone | **The menu** (screenshot of 2.4.0) | **A table**: every row is a block |
+
+### Themes
+
+The button at the right of the header, and the Appearance card of the Account
+page, choose the look of the interface: a theme, and a mode.
+
+| Theme | Colors |
+| --- | --- |
+| **Default** | The look of the releases before 2.5.0: blue and grey |
+| **Aesir** | Navy `#000099`, orange `#FFA500` and grey `#71797E`, with white and black. Text is black on white, or white on black; navy is the header and the buttons in the light mode, and orange the buttons and links in the dark one, where navy would not show |
+
+Every theme is made in a light and a dark mode. **Like the system** follows the
+light or dark mode of the operating system and changes with it, and is the
+default. The choice is kept in the browser, so it is the same on the sign in page,
+and is different on every device.
+
+A theme is a block of colors in `ui/css/themes.css` for each mode, and an entry
+in `THEMES` of `ui/js/theme.js`; nothing in the stylesheet `ui/css/theme.css`
+has a color of its own. The text and the background of the Aesir theme are
+checked against the contrast of WCAG AA (4.5 for text, 3 for lines and markers).
 
 | Page | Who | What it does |
 | --- | --- | --- |
@@ -688,6 +719,43 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.5.0
+
+The user interface is reworked: a new icon, a new menu, themes, and more of
+Athena UI in use.
+
+#### Added
+
+- **Themes.** The Default theme, which is the look of the earlier releases, and
+  the new Aesir theme in navy, orange and grey. Both are made in a light and a
+  dark mode, and the mode can follow the system. The choice is in the header
+  and on the Account page, and is kept in the browser. See [Themes](#themes).
+- **A new icon:** the rune Ansuz, the rune of the Aesir, as a flat icon.
+
+#### Changed
+
+- **A new menu.** A bar in the header with a dropdown for every group on a wide
+  screen, and a bar of tabs at the bottom with sheets for the groups on a
+  tablet and a phone, instead of the sidebar and its drawer.
+- **More of Athena UI.** The buttons, badges, cards, figures of the dashboard,
+  pagination, breadcrumbs, the fields of the forms and the dialogs of the forms
+  are the ones of Athena UI, and the settings are in tabs. The pages are routed
+  by its router. The stylesheet builds on its default theme.
+- The page title shows the page that is open.
+
+#### Not changed
+
+- The tables with buttons and badges in their cells, and the graphs of the
+  dashboard, are the manager's own: the table of Athena UI shows text only, and
+  its graphs have no tooltip and no table of values.
+- The API, the settings and the plugin API (`ui.card`, `ui.button`, ...) are
+  the same.
+
+#### Upgrading from 2.4.0
+
+- There are no new dependencies, and nothing has to be changed.
+- The screenshots of the documentation are of 2.4.0.
 
 ### 2.4.0
 
