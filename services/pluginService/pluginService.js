@@ -75,6 +75,18 @@ function discover() {
     });
 }
 
+// Where a plugin keeps its files. The folder of the program is read-only for the service on an installation (it belongs to root), so the
+// files go next to the saved settings, which is the one place the service can write: <folder of settings.json>/plugin-data/<name>, that
+// is /var/lib/odin-ns-manager/plugin-data/<name> on an installation. Only the service gets in (the files can hold keys). A plugin that
+// already has a data folder of its own in its plugin folder (before 2.6.1) keeps using that one.
+function dataFolderOf(plugin) {
+    const old = path.join(plugin.folder, 'data');
+    const data = path.join(path.dirname(config.settingsFile), 'plugin-data', plugin.manifest.name);
+    if (!fs.existsSync(data) && fs.existsSync(old)) return old;
+    fs.mkdirSync(data, { recursive: true, mode: 0o700 });
+    return data;
+}
+
 function createApi(plugin) {
     const { name } = plugin.manifest;
     const label = (level) => (...parts) => logs()[level](`Plugin ${name}: `, ...parts);
@@ -87,11 +99,7 @@ function createApi(plugin) {
         version: plugin.manifest.version,
         // The folder of the plugin, and one it can keep its files in
         folder: plugin.folder,
-        dataFolder: (() => {
-            const data = path.join(plugin.folder, 'data');
-            fs.mkdirSync(data, { recursive: true });
-            return data;
-        })(),
+        dataFolder: dataFolderOf(plugin),
         // The settings of the server that are safe to read
         server: Object.freeze({ name: config.serverName, company: config.companyName, version: config.version }),
         log: { info: label('addInfoLogBasicInfoEntry'), error: label('addErrorLogErrorEntry') },

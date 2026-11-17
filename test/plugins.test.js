@@ -10,7 +10,7 @@ for (const name of Object.keys(process.env)) if (name.startsWith('ODIN_')) delet
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'odin-plugins-'));
 process.env.ODIN_SETTINGS_FILE = path.join(root, 'settings.json');
 process.env.ODIN_PLUGINS_FOLDER = path.join(root, 'plugins');
-process.env.ODIN_PLUGINS_ENABLED = 'good,bad,wrongname,missing';
+process.env.ODIN_PLUGINS_ENABLED = 'good,bad,wrongname,missing,keeper,oldkeeper';
 
 // The log service of freya-ns-api is not needed here
 const apiPath = require.resolve('../services/apiService/apiService');
@@ -43,6 +43,9 @@ before(async () => {
     });
     write('bad', { 'plugin.json': JSON.stringify({ name: 'bad' }), 'index.js': 'exports.activate = () => { throw new Error("no start"); };' });
     write('wrongname', { 'plugin.json': JSON.stringify({ name: 'other' }), 'index.js': 'exports.activate = () => {};' });
+    // Where the files of a plugin go: next to the settings, or the old data folder of a plugin that has one
+    write('keeper', { 'plugin.json': JSON.stringify({ name: 'keeper' }), 'index.js': 'exports.activate = (api) => { global.__keeper = api.dataFolder; };' });
+    write('oldkeeper', { 'plugin.json': JSON.stringify({ name: 'oldkeeper' }), 'index.js': 'exports.activate = (api) => { global.__oldkeeper = api.dataFolder; };', 'data/notes.txt': 'kept' });
     await pluginService.start();
 });
 
@@ -94,4 +97,18 @@ test('only the public folder of a running plugin is served', async () => {
     } finally {
         await new Promise((resolve) => server.close(resolve));
     }
+});
+
+test('the data folder of a plugin is next to the settings, not in the (read-only) program folder, and only the service gets in', () => {
+    const expected = path.join(root, 'plugin-data', 'keeper');
+    assert.equal(global.__keeper, expected);
+    assert.ok(fs.statSync(expected).isDirectory());
+    assert.ok(!fs.existsSync(path.join(root, 'plugins', 'keeper', 'data')), 'nothing is made in the folder of the plugin');
+    if (process.platform !== 'win32') assert.equal(fs.statSync(expected).mode & 0o777, 0o700);
+});
+
+test('a plugin that already has a data folder of its own keeps using it', () => {
+    assert.equal(global.__oldkeeper, path.join(root, 'plugins', 'oldkeeper', 'data'));
+    assert.equal(fs.readFileSync(path.join(global.__oldkeeper, 'notes.txt'), 'utf8'), 'kept');
+    assert.ok(!fs.existsSync(path.join(root, 'plugin-data', 'oldkeeper')));
 });

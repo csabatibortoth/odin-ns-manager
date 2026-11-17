@@ -28,7 +28,7 @@
 # What is installed where:
 #   /opt/odin-ns-manager        the program (owned by root)
 #   /etc/odin-ns-manager        odin.env: the key of the tokens, the database, the folders
-#   /var/lib/odin-ns-manager    settings.json (what the Settings page saves) and the certificates
+#   /var/lib/odin-ns-manager    settings.json (what the Settings page saves), the certificates and plugin-data (the files of the plugins)
 #   /var/log/odin-ns-manager    the logs
 # The service runs as the user "odin", and is managed by systemd, or by OpenRC on Alpine.
 set -eu
