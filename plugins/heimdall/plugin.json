@@ -1,0 +1,8 @@
+{
+    "name": "heimdall",
+    "version": "1.0.0",
+    "description": "Reports the state and the traffic of this server to a Heimdall Monitoring System: metrics of the DNS server, the zones, the blocking and the cache, and logs of what changed.",
+    "main": "index.js",
+    "roles": ["admin"],
+    "ui": { "label": "Heimdall", "script": "ui.js", "group": "Plugins" }
+}
