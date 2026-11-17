@@ -356,7 +356,7 @@ fetch_app() {
     fi
 
     # The service is started through install/launch.js, which the versions before 2.3.0 do not have
-    [ -f "$APP_DIR/install/launch.js" ] || die "This version of the program is older than its installer (2.3.0): choose a newer one with --branch, such as --branch develop."
+    [ -f "$APP_DIR/install/launch.js" ] || die "This version of the program is older than its installer (2.3.0): choose a newer one with --branch, such as --branch master."
 
     # The packages are part of the repository; they are only installed when a source came without them
     if [ ! -d "$APP_DIR/node_modules/express" ]; then

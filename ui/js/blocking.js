@@ -4,7 +4,7 @@
 import { api, canWriteDns, isAdmin } from './api.js';
 import {
     el, control, button, select, badge, activeBadge, notice, showError, formDialog, confirmDialog, formatDate,
-    PAGE_SIZE, link, head, options, fact, card, searchBox, filter, activeFilter, listLoader,
+    PAGE_SIZE, link, breadcrumbs, head, options, fact, card, searchBox, filter, activeFilter, listLoader,
 } from './ui.js';
 import { formatNumber } from './charts.js';
 
@@ -303,7 +303,7 @@ async function listEntries($page, listId) {
     );
 
     $page.append(
-        el('p', { class: 'breadcrumb' }, link('#/blocking', 'Blocking'), ' / ', list.name),
+        breadcrumbs({ label: 'Blocking', href: '#/blocking' }, { label: list.name }),
         head(list.name),
         el(
             'div',

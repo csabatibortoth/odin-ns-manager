@@ -1,11 +1,13 @@
 // The pages of the user interface. Each one renders into the element it is given.
 
+import { generateGrid, generateTabs, generateField } from '../vendor/athena-ui/athena-ui.js';
 import { api, session, events, isAdmin, canWriteDns, canMonitor } from './api.js';
 import {
     el, control, button, select, table, pager, badge, activeBadge, notice, showError,
     formDialog, inlineForm, confirmDialog, fieldError, formatDate, formatDuration, formatBytes,
-    PAGE_SIZE, link, head, options, card, searchBox, filter, activeFilter,
+    PAGE_SIZE, link, breadcrumbs, head, options, card, stat, searchBox, filter, activeFilter,
 } from './ui.js';
+import { THEMES, MODES, appearance, setTheme, setMode, onAppearanceChange } from './theme.js';
 import { lineChart, formatNumber } from './charts.js';
 import { topLists } from './monitoring.js';
 
@@ -18,10 +20,6 @@ const RANGES = [['15m', 'Last 15 minutes'], ['1h', 'Last hour'], ['6h', 'Last 6 
 const REFRESH_SECONDS = 10;
 
 const sum = (values) => values.reduce((total, value) => total + (value || 0), 0);
-
-function tile(label, value, note) {
-    return el('div', { class: 'tile' }, el('div', { class: 'tile-label', text: label }), el('div', { class: 'tile-value', text: value }), el('div', { class: 'tile-note muted', text: note || '' }));
-}
 
 export function buildText(build) {
     if (!build?.number && !build?.commit) return null;
@@ -38,7 +36,7 @@ const DNSSEC_MODES = { off: 'Off', validate: 'Validated here', 'trust-ad': 'Trus
 
 export async function dashboard($page) {
     const state = { range: '1h' };
-    const $tiles = el('div', { class: 'tiles' });
+    const $tiles = $(generateGrid({ columns: 3, class: 'tiles' }));
     const $cards = el('div', { class: 'cards state' });
     const $top = el('div');
 
@@ -75,12 +73,12 @@ export async function dashboard($page) {
         const period = RANGES.find(([value]) => value === m.range)[1].toLowerCase();
 
         $tiles.empty().append(
-            tile('Queries', formatNumber(total, 0), period),
-            tile('Own answers', formatNumber(totals.own, 0), share(totals.own)),
-            tile('Forwarded', formatNumber(totals.forwarded, 0), share(totals.forwarded)),
-            tile('Blocked', formatNumber(totals.blocked, 0), share(totals.blocked)),
-            tile('Failed', formatNumber(totals.failed, 0), share(totals.failed)),
-            tile('Average answer time', time === null ? '–' : `${formatNumber(time)} ms`, period)
+            stat('Queries', formatNumber(total, 0), period),
+            stat('Own answers', formatNumber(totals.own, 0), share(totals.own)),
+            stat('Forwarded', formatNumber(totals.forwarded, 0), share(totals.forwarded)),
+            stat('Blocked', formatNumber(totals.blocked, 0), share(totals.blocked)),
+            stat('Failed', formatNumber(totals.failed, 0), share(totals.failed)),
+            stat('Average answer time', time === null ? '–' : `${formatNumber(time)} ms`, period)
         );
     };
 
@@ -405,7 +403,7 @@ async function zoneRecords($page, zoneId) {
     };
 
     $page.append(
-        el('p', { class: 'breadcrumb' }, link('#/zones', 'Zones'), ' / ', zone.name),
+        breadcrumbs({ label: 'Zones', href: '#/zones' }, { label: zone.name }),
         head(
             zone.name,
             write ? button('Edit zone', () => zoneDialog(zone, load)) : null,
@@ -859,6 +857,37 @@ export async function logs($page) {
 
 ///--- Account
 
+// The theme and the mode of the interface, kept in this browser. The same
+// choice is in the menu at the right of the header.
+function appearanceCard() {
+    const now = appearance();
+    const themes = generateField({
+        name: 'theme',
+        type: 'radio',
+        label: 'Theme',
+        value: now.theme,
+        options: THEMES.map((theme) => ({ value: theme.id, text: `${theme.name}: ${theme.description}` })),
+        onChange: (value) => setTheme(value),
+    });
+    const modes = generateField({
+        name: 'mode',
+        type: 'radio',
+        label: 'Mode',
+        value: now.mode,
+        options: MODES.map((mode) => ({ value: mode.id, text: mode.name })),
+        help: 'Light and dark are both made for every theme.',
+        onChange: (value) => setMode(value),
+    });
+    const $card = el('section', { class: 'card' }, el('h3', { text: 'Appearance' }), el('div', { class: 'athena-form form' }, themes.element, modes.element));
+    // Chosen in the menu of the header: show it here as well
+    onAppearanceChange(({ theme, mode }) => {
+        if (!$card[0].isConnected) return;
+        themes.setValue(theme);
+        modes.setValue(mode);
+    });
+    return $card;
+}
+
 // The signed-in user changes their own account here
 export async function account($page) {
     const $profile = el('section', { class: 'card' });
@@ -926,7 +955,7 @@ export async function account($page) {
         })
     );
 
-    $page.append(head('Account'), el('div', { class: 'cards wide' }, $profile, $password), $facts);
+    $page.append(head('Account'), el('div', { class: 'cards wide' }, $profile, $password, appearanceCard()), $facts);
     await load();
 }
 
@@ -949,6 +978,7 @@ const settingDefault = (setting) => setting.options?.find((option) => option.val
 export async function settings($page) {
     const $notice = el('div');
     const $groups = el('div');
+    let activeGroup = 0; // the tab stays where it is when the settings are shown again
 
     const show = (result) => {
         $notice.empty();
@@ -958,51 +988,56 @@ export async function settings($page) {
             );
         }
 
-        $groups.empty().append(
-            result.groups.map((group) => {
-                const editable = group.settings.filter((setting) => setting.editable);
-                return el(
-                    'section',
-                    { class: 'settings-group' },
-                    el(
-                        'div',
-                        { class: 'toolbar page-head' },
-                        el('h3', { text: group.title }),
-                        el('span', { class: 'spacer' }),
-                        group.title === 'E-mail' ? button('Send a test e-mail', () => testMailDialog(), 'small') : null,
-                        editable.length ? button('Edit', () => settingsDialog(group, show), 'small') : null
-                    ),
-                    table(
-                        [
-                            { title: 'Setting', cell: (setting) => setting.label },
-                            {
-                                title: 'Value',
-                                class: 'value',
-                                cell: (setting) => [
-                                    settingText(setting, setting.value),
-                                    'pending' in setting
-                                        ? el('div', {}, badge('After restart', 'warn'), ' ', settingText(setting, setting.pending))
-                                        : null,
-                                ],
+        const panel = (group) => {
+            const editable = group.settings.filter((setting) => setting.editable);
+            return el(
+                'section',
+                { class: 'settings-group' },
+                el(
+                    'div',
+                    { class: 'toolbar page-head' },
+                    el('span', { class: 'spacer' }),
+                    group.title === 'E-mail' ? button('Send a test e-mail', () => testMailDialog(), 'small') : null,
+                    editable.length ? button('Edit', () => settingsDialog(group, show), 'small') : null
+                ),
+                table(
+                    [
+                        { title: 'Setting', cell: (setting) => setting.label },
+                        {
+                            title: 'Value',
+                            class: 'value',
+                            cell: (setting) => [
+                                settingText(setting, setting.value),
+                                'pending' in setting
+                                    ? el('div', {}, badge('After restart', 'warn'), ' ', settingText(setting, setting.pending))
+                                    : null,
+                            ],
+                        },
+                        {
+                            title: 'From',
+                            cell: (setting) => badge(SOURCES[setting.source], setting.source === 'default' ? '' : 'ok'),
+                        },
+                        {
+                            title: 'Changes',
+                            cell: (setting) => {
+                                if (setting.source === 'environment') return el('span', { class: 'muted', text: `fixed by ${setting.env}` });
+                                if (!setting.editable) return el('span', { class: 'muted', text: `only with ${setting.env}` });
+                                return setting.live ? 'at once' : 'after a restart';
                             },
-                            {
-                                title: 'From',
-                                cell: (setting) => badge(SOURCES[setting.source], setting.source === 'default' ? '' : 'ok'),
-                            },
-                            {
-                                title: 'Changes',
-                                cell: (setting) => {
-                                    if (setting.source === 'environment') return el('span', { class: 'muted', text: `fixed by ${setting.env}` });
-                                    if (!setting.editable) return el('span', { class: 'muted', text: `only with ${setting.env}` });
-                                    return setting.live ? 'at once' : 'after a restart';
-                                },
-                            },
-                        ],
-                        group.settings
-                    )
-                );
-            })
-        );
+                        },
+                    ],
+                    group.settings
+                )
+            );
+        };
+
+        $groups.empty();
+        generateTabs({
+            parent: $groups[0],
+            active: activeGroup < result.groups.length ? `group-${activeGroup}` : undefined,
+            onChange: (id) => (activeGroup = Number(id.slice(6))),
+            tabs: result.groups.map((group, index) => ({ id: `group-${index}`, label: group.title, content: () => panel(group)[0] })),
+        });
     };
 
     $page.append(

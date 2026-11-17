@@ -1,0 +1,173 @@
+/* The themes of the manager. A theme is a set of colors; every theme has a
+   light and a dark mode. theme.js puts the chosen ones on the <html> element:
+
+       <html data-theme="aesir" data-mode="dark">
+
+   To add a theme: add a light and a dark block here, and an entry to THEMES
+   in theme.js. Nothing else has to change, as theme.css only uses the variables.
+
+   --header-*   the bar at the top (and the bar at the bottom on small screens)
+   --accent     what is primary: buttons, the selected tab, the avatar
+   --focus      the outline of the element that has the keyboard focus
+   --series-*   the lines of the graphs, in their fixed order */
+
+/* ---------------------------------------------------------------- Default */
+
+/* Without the script (or before it runs) the page follows the system */
+:root,
+:root[data-theme="default"][data-mode="light"] {
+    color-scheme: light;
+    --bg: #f4f6f8;
+    --surface: #fff;
+    --surface-2: #eef1f4;
+    --text: #1c2530;
+    --muted: #5d6b7a;
+    --border: #d5dbe1;
+    --accent: #1f4e79;
+    --accent-text: #fff;
+    --link: #1a5a96;
+    --focus: #1a5a96;
+    --header-bg: #1f4e79;
+    --header-text: #fff;
+    --header-accent: #f2b632;
+    --danger: #b3261e;
+    --ok: #1d6b3a;
+    --warn: #8a5a00;
+    --ok-bg: #e2f3e8;
+    --warn-bg: #fdf1d3;
+    --danger-bg: #fbe4e2;
+    --shadow: 0 1px 2px rgb(0 0 0 / 8%);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --chart-grid: #e6eaee;
+    --chart-axis: #c2cad3;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-mode]) {
+        color-scheme: dark;
+        --bg: #12171d;
+        --surface: #1b222b;
+        --surface-2: #242d38;
+        --text: #e4e9ee;
+        --muted: #9aa7b4;
+        --border: #34404d;
+        --accent: #2f6ea8;
+        --link: #7db7ea;
+        --focus: #7db7ea;
+        --header-bg: #2f6ea8;
+        --header-text: #fff;
+        --header-accent: #f2b632;
+        --danger: #f08a82;
+        --ok: #7fd09a;
+        --warn: #f0c060;
+        --ok-bg: #1b3526;
+        --warn-bg: #3a2f12;
+        --danger-bg: #41201d;
+        --shadow: none;
+        --series-1: #3987e5;
+        --series-2: #d95926;
+        --series-3: #199e70;
+        --series-4: #c98500;
+        --chart-grid: #2a333e;
+        --chart-axis: #3d4957;
+    }
+}
+
+:root[data-theme="default"][data-mode="dark"] {
+    color-scheme: dark;
+    --bg: #12171d;
+    --surface: #1b222b;
+    --surface-2: #242d38;
+    --text: #e4e9ee;
+    --muted: #9aa7b4;
+    --border: #34404d;
+    --accent: #2f6ea8;
+    --accent-text: #fff;
+    --link: #7db7ea;
+    --focus: #7db7ea;
+    --header-bg: #2f6ea8;
+    --header-text: #fff;
+    --header-accent: #f2b632;
+    --danger: #f08a82;
+    --ok: #7fd09a;
+    --warn: #f0c060;
+    --ok-bg: #1b3526;
+    --warn-bg: #3a2f12;
+    --danger-bg: #41201d;
+    --shadow: none;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --chart-grid: #2a333e;
+    --chart-axis: #3d4957;
+}
+
+/* ------------------------------------------------------------------ Aesir
+   Made of #000099, #71797E, #FFA500, #FFFFFF and #000000. The lighter and
+   darker shades of them, which text and graphs need to be readable, are
+   marked. Contrast of the text, by WCAG: white on #000099 14.4, black on
+   #FFA500 10.6, #FFA500 on #000099 7.3, #FFA500 on black 10.6. */
+
+:root[data-theme="aesir"][data-mode="light"] {
+    color-scheme: light;
+    --bg: #f0f1f3;                /* #71797E, very light */
+    --surface: #fff;
+    --surface-2: #e6e8ea;         /* #71797E, light */
+    --text: #000;
+    --muted: #565d61;             /* #71797E, darker: 6.7 on white */
+    --border: #c3c7ca;            /* #71797E, light */
+    --accent: #000099;
+    --accent-text: #fff;
+    --link: #000099;
+    --focus: #000099;
+    --header-bg: #000099;
+    --header-text: #fff;
+    --header-accent: #ffa500;
+    --danger: #a8231b;
+    --ok: #1d6b3a;
+    --warn: #6b4200;              /* #FFA500, dark: for text on its tint */
+    --ok-bg: #e2f3e8;
+    --warn-bg: #ffedc9;           /* #FFA500, light */
+    --danger-bg: #fbe4e2;
+    --shadow: 0 1px 2px rgb(0 0 0 / 10%);
+    --series-1: #000099;
+    --series-2: #d17a00;          /* #FFA500, darker: 3.2 on white */
+    --series-3: #71797e;
+    --series-4: #1d7a4f;
+    --chart-grid: #e6e8ea;
+    --chart-axis: #b5babd;
+}
+
+:root[data-theme="aesir"][data-mode="dark"] {
+    color-scheme: dark;
+    --bg: #000;
+    --surface: #0d0d17;           /* black with a little of #000099 */
+    --surface-2: #181826;
+    --text: #fff;
+    --muted: #a9b0b5;             /* #71797E, lighter: 9.6 on black */
+    --border: #2d3040;
+    --accent: #ffa500;            /* #000099 would not show on black */
+    --accent-text: #000;
+    --link: #ffa500;
+    --focus: #ffa500;
+    --header-bg: #000099;
+    --header-text: #fff;
+    --header-accent: #ffa500;
+    --danger: #ff8a80;
+    --ok: #6fd29a;
+    --warn: #ffc766;
+    --ok-bg: #0f2a1b;
+    --warn-bg: #33250a;
+    --danger-bg: #3a1512;
+    --shadow: none;
+    --series-1: #8c99ff;          /* #000099, lighter */
+    --series-2: #ffa500;
+    --series-3: #a9b0b5;
+    --series-4: #5ccf97;
+    --chart-grid: #1a1a28;
+    --chart-axis: #3a3e50;
+}
