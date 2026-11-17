@@ -12,7 +12,7 @@ plugins/my-plugin/
     plugin.json     the description
     index.js        exports activate(api), and optionally deactivate()
     public/ui.js    optional: the page of the plugin in the menu
-    data/           created for the plugin, to keep its files in (not in git)
+    (data/          only for a plugin that had one before 2.6.1, see below)
 ```
 
 ## plugin.json
@@ -57,7 +57,7 @@ the server.
 | --- | --- |
 | `api.name`, `api.version` | From `plugin.json` |
 | `api.server` | `{ name, company, version }` of the server |
-| `api.folder`, `api.dataFolder` | The folder of the plugin, and one to keep files in |
+| `api.folder`, `api.dataFolder` | The folder of the plugin (read-only on an installation), and one to keep files in: `plugin-data/<name>` next to `settings.json`, that is `/var/lib/odin-ns-manager/plugin-data/<name>` on an installation. Created for the plugin, readable by the service only |
 | `api.log.info(...)`, `api.log.error(...)` | Write to the log of the server, with the name of the plugin |
 | `api.router` | An express router, at `/api/plugins/<name>`. Signed in users of the `roles` only; `req.user` is `{ id, username, role }`. JSON bodies are read |
 | `api.on(event, handler)` | `dnsChange`: a zone, record or the blocking was changed through the API. `sync`: a synchronization imported something (gets its report) |

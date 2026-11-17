@@ -735,6 +735,20 @@ temporary file; they need no database.
 
 ## Release notes
 
+### 2.6.1
+
+#### Fixed
+
+- **A plugin could not start on an installation**: `EACCES: permission denied, mkdir '/opt/odin-ns-manager/plugins/heimdall/data'`. The data
+  folder of a plugin (`api.dataFolder`) was made inside the plugin folder, which is part of the program and read-only for the service.
+  It is now `plugin-data/<name>` next to `settings.json` (`/var/lib/odin-ns-manager/plugin-data/<name>` on an installation), readable by
+  the service only. A plugin that already has a `data` folder of its own keeps using it.
+
+#### Upgrading from 2.6.0
+
+- Update and restart. The settings of the heimdall plugin were never saved on an installation (it could not start), so enter the address,
+  the agent UID and the license key on its page once more.
+
 ### 2.6.0
 
 #### Added

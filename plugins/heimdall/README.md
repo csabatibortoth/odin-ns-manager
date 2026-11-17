@@ -61,7 +61,7 @@ never followed, so the key can not be sent to another address.
 ## Security
 
 - Only administrators can open the page and its routes (`roles` in `plugin.json`).
-- The license key is kept in `data/settings.json` with the mode 600 (this folder is not in git), is never
+- The license key is kept in `settings.json` of the data folder of the plugin (`plugin-data/heimdall` next to the settings of the server, `/var/lib/odin-ns-manager/plugin-data/heimdall` on an installation) with the mode 600, is never
   returned by the API of the plugin, never shown on the page and never written to the log.
 - The page is made of text nodes of the plugin API: nothing from Heimdall is ever inserted as HTML.
 
@@ -75,7 +75,7 @@ lib/collect.js     what is measured (and the real sources: the services of this 
 lib/reporter.js    the schedule, the notes about changes, what the page shows
 lib/sender.js      the delivery, the waiting batches, the pauses
 public/ui.js       the page of the plugin
-data/              the settings (created when they are saved)
+plugin-data/heimdall/   not in this folder (it is read-only on an installation): the settings, created when they are saved
 ```
 
 Tests: `test/heimdall-plugin.test.js` of the server, with a fake Heimdall.
