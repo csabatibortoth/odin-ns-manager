@@ -3,14 +3,14 @@
 // dialogs, and routes the pages; the pages are in pages.js, blocking.js,
 // monitoring.js and service.js.
 //
-// The menu is the menu of Athena UI with its submenus: a bar in the header with
-// a dropdown for every group, and on a tablet or a phone a bar of tabs at the
-// bottom of the screen, where a group opens as a sheet. See "Menu" in theme.css.
+// The menu is the menu of Athena UI (generateMenu) with its groups: a bar in the
+// header with a dropdown for every group, and on a tablet or a phone a bar of
+// tabs at the bottom of the screen, where a group opens as a sheet. See "Menu" in theme.css.
 
 /* global $ */
 
 import {
-    init, clearWrapper, clearHeaderMenu, generateHeaderMenu, generateLoginForm, generateDropdown, generateAvatar, createRouter,
+    init, clearWrapper, clearHeaderMenu, generateHeaderMenu, generateLoginForm, generateDropdown, createRouter,
 } from '../vendor/athena-ui/athena-ui.js';
 import { api, session, events, setToken, hasToken, onSessionEnd, isAdmin, canMonitor } from './api.js';
 import { el, notice, clearNotices, closeDialog, errorText } from './ui.js';
@@ -67,9 +67,6 @@ async function pluginPage($page, name) {
     await module.render($page, { api, session, ui });
 }
 
-// Athena UI reads the menu from this object whenever the menu is generated
-const menuItems = { headerMenu: [], footerMenu: [] };
-
 const GROUP_ICONS = { DNS: 'dns', Monitoring: 'monitoring', Service: 'service', You: 'user' };
 const slug = (text) => text.toLowerCase().replace(/\W+/g, '-');
 const itemId = (item) => `menu-${item.arg ? `${item.route}-${item.arg}` : item.route || slug(item.label)}`;
@@ -77,6 +74,7 @@ const groupId = (group) => `menu-group-${slug(group)}`;
 const allowed = (item) =>
     Boolean(session.user) && (!item.admin || isAdmin()) && (!item.monitor || canMonitor()) && (!item.own || Boolean(session.user.id)) && (!item.when || item.when());
 const who = () => (session.user ? session.user.displayName || session.user.username : '');
+const hrefOf = (item) => (item.arg ? `#/${item.route}/${encodeURIComponent(item.arg)}` : `#/${item.route}`);
 
 // The page and its argument from the address: #/zones/abc -> ['zones', 'abc']
 function currentPath() {
@@ -90,78 +88,55 @@ function currentPath() {
     return [page, decoded];
 }
 
-function markActive() {
-    $('#header_menu li').removeClass('active');
-    $('#header_menu .submenu-item').removeAttr('aria-current');
-    if (!session.user) return;
-
-    const [page, argument] = currentPath();
-    const item = menuList().find((candidate) => candidate.route === page && (!candidate.arg || candidate.arg === argument));
-    if (!item) return;
-    if (!item.group) {
-        $(`#${itemId(item)}`).addClass('active');
-        return;
-    }
-    const $group = $(`#${groupId(item.group)}`).addClass('active');
-    $group.find('.submenu-item').filter((_, entry) => entry.textContent === item.label).attr('aria-current', 'page');
-}
-
 ///--- Menu
 
-// The items of the menu: the pages without a group stand by themselves, every
-// group is an item with its pages as the entries of its submenu
-function buildMenu() {
-    const items = menuList().filter(allowed);
-    const extras = new Map(); // the id of an item -> what is drawn on it
-    menuItems.headerMenu.length = 0;
+// A bar in the header on a wide screen (1000 pixels and more), tabs at the bottom of the screen below that
+const wideScreen = window.matchMedia('(min-width: 1000px)');
+let menu = null;
 
-    for (const item of items) {
+// A page of the menu is a link; an action (sign out, the API docs) is a button
+const entryOf = (item) => ({ id: itemId(item), label: item.label, ...(item.action ? {} : { href: hrefOf(item) }) });
+
+// The items of the menu: the pages without a group stand by themselves, every
+// group is an item with its pages as its children; the last group is the signed-in user, who is named by the name
+function menuModel() {
+    const model = [];
+    for (const item of menuList().filter(allowed)) {
         if (!item.group) {
-            const id = itemId(item);
-            extras.set(id, { icon: 'dashboard' });
-            menuItems.headerMenu.push({ id, class: 'menu-item', text: '', inner_text: item.label });
+            model.push({ ...entryOf(item), icon: icon('dashboard') });
             continue;
         }
         const id = groupId(item.group);
-        let entry = menuItems.headerMenu.find((candidate) => candidate.id === id);
+        let entry = model.find((candidate) => candidate.id === id);
         if (!entry) {
-            // The last group is the signed-in user, who is named by the name
             const you = item.group === 'You';
-            entry = { id, class: 'menu-item', text: '', inner_text: you ? who() : item.group, children: [] };
-            menuItems.headerMenu.push(entry);
-            extras.set(id, { icon: GROUP_ICONS[item.group] || 'more', you, title: you ? 'Account' : item.group });
+            entry = { id, label: you ? who() : item.group, children: [], ...(you ? { avatar: { name: who() }, align: 'end' } : { icon: icon(GROUP_ICONS[item.group] || 'more') }) };
+            model.push(entry);
         }
-        entry.children.push({ inner_text: item.label });
+        entry.children.push(entryOf(item));
     }
-
-    clearHeaderMenu();
-    generateHeaderMenu();
-    $('body').toggleClass('signed-in', Boolean(session.user));
-    $('#header_menu_container').attr({ role: 'navigation', 'aria-label': 'Menu' });
-
-    // An icon before every label; the user has the avatar of Athena UI instead
-    for (const [id, extra] of extras) {
-        const $item = $(`#${CSS.escape(id)}`);
-        const $label = $item.children('span').first();
-        const text = $label.text();
-        $label.empty().append(extra.you ? generateAvatar({ name: text, size: 'small' }) : icon(extra.icon), el('span', { class: 'menu-label', text }));
-        if (extra.you) $item.addClass('menu-end');
-        if (extra.title) $item.find('.submenu').attr('aria-label', extra.title);
-    }
-
-    // The items of Athena UI are clicked; make them reachable with the keyboard as well
-    $('#header_menu > li:not(.has-submenu) > span')
-        .attr({ role: 'link', tabindex: 0 })
-        .on('keydown', (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                $(event.currentTarget).trigger('click');
-            }
-        });
-
-    showFooter();
-    markActive();
+    return model;
 }
+
+function buildMenu() {
+    menu?.destroy();
+    menu = null;
+    clearHeaderMenu();
+    if (session.user) {
+        menu = generateHeaderMenu({
+            items: menuModel(),
+            label: 'Menu',
+            layout: wideScreen.matches ? 'bar' : 'bottom-tabs',
+            followHash: true,
+            // A page opens by its link (the router listens to the address); an action is run
+            onNavigate: (entry) => menuList().find((candidate) => itemId(candidate) === entry.id)?.action?.(),
+        });
+    }
+    document.body.classList.toggle('signed-in', Boolean(session.user));
+    showFooter();
+}
+
+wideScreen.addEventListener('change', buildMenu);
 
 ///--- Look: the theme and the mode, chosen in the menu at the right of the header
 
@@ -219,14 +194,6 @@ function showFooter() {
 
 ///--- Pages
 
-// Called by Athena UI with the label of the menu item that was clicked
-function nav(label) {
-    const item = menuList().find((candidate) => candidate.label === label);
-    if (!item) return; // Athena UI also calls it, without a label, while it builds the page
-    if (item.action) return item.action();
-    router.navigate(item.arg ? `/${item.route}/${encodeURIComponent(item.arg)}` : `/${item.route}`);
-}
-
 // Shows the page of the address again
 const reroute = () => router.navigate(location.hash.replace(/^#/, '') || '/');
 
@@ -256,7 +223,6 @@ function guard({ params }) {
 
 async function showPage({ params }) {
     const item = menuList().find((candidate) => candidate.route === params.page && (!candidate.arg || candidate.arg === params.id));
-    markActive();
     window.scrollTo(0, 0);
     document.title = `${item.label} · ${session.info?.name || 'Odin NS Manager'}`;
 
@@ -280,7 +246,6 @@ const router = createRouter({
 ///--- Signing in and out
 
 function showLogin() {
-    markActive();
     clearWrapper();
     generateLoginForm();
 
@@ -302,7 +267,6 @@ function showLogin() {
 
 // A page of the lost password mails: it stands where the login form does
 function showAccountPage(title, text, ...body) {
-    markActive();
     clearWrapper();
     $('#wrapper').append(
         el('div', { class: 'login-page' }, el('h2', { text: title }), text ? el('p', { class: 'muted', text }) : null, body, el('p', { class: 'muted' }, ui.link('#/login', 'Back to sign in')))
@@ -422,8 +386,8 @@ async function start() {
             bordered: false,
             login_enabled: true,
         },
-        menuItems,
-        nav,
+        // The menu is made after the page, by buildMenu: it depends on who is signed in
+        menuItems: { headerMenu: [], footerMenu: [] },
         login,
     });
 

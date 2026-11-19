@@ -4,7 +4,7 @@
 //Repository: https://github.com/csabatibortoth/athena-ui
 
 import config from "../../config/config.js";
-import Cookies from "../../js-cookie/src/api.mjs";
+import Cookies from "../../core/cookies.js";
 
 // The session is kept in a cookie, so the page knows after a reload who is logged in.
 // A cookie written from script can be read by any script of the page: keep only what the UI needs

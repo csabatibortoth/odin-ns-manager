@@ -3,9 +3,7 @@
 //LICENCE: MIT
 //Repository: https://github.com/csabatibortoth/athena-ui
 
-/* global $ */
-
-import { HTMLElementGenerator } from "../HTMLElementGenerator/src/HTMLElementGenerator.js";
+import { HTMLElementGenerator } from "../../core/elementGenerator.js";
 import config, { withBorder } from "../../config/config.js";
 import { getMenuItems } from "../../config/hooks.js";
 import { generateBasicMenu, defaultMenuItems } from "../MenuGenerator/basicMenuGenerator.js";
@@ -25,7 +23,7 @@ export function generateFooterMenu() {
 }
 
 export function clearFooterMenu() {
-    $("#footer_menu").empty();
+    document.getElementById("footer_menu")?.replaceChildren();
 }
 
 export function generateFooterCopyrightText() {

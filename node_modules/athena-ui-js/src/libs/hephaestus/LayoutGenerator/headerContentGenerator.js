@@ -3,12 +3,11 @@
 //LICENCE: MIT
 //Repository: https://github.com/csabatibortoth/athena-ui
 
-/* global $ */
-
-import { HTMLElementGenerator } from "../HTMLElementGenerator/src/HTMLElementGenerator.js";
+import { HTMLElementGenerator } from "../../core/elementGenerator.js";
 import config, { withBorder } from "../../config/config.js";
 import { getMenuItems } from "../../config/hooks.js";
 import { generateBasicMenu, defaultMenuItems } from "../MenuGenerator/basicMenuGenerator.js";
+import { generateMenu } from "../MenuGenerator/menuGenerator.js";
 
 export function generateHeaderContent() {
     generateContaninerForElements({ parent: "header", id: "header_logo_container", text: "" });
@@ -19,7 +18,15 @@ export function generateHeaderContent() {
     generateHeaderMenu();
 }
 
-export function generateHeaderMenu() {
+/**
+ * Generates the menu of the header. Without options it is built from the global `menuItems` / nav callback, as before.
+ * With `options.items` it is a generateMenu (no globals): `generateHeaderMenu({ items, onNavigate, active, layout, followHash })`.
+ */
+export function generateHeaderMenu(options) {
+    if (options?.items) {
+        document.getElementById("header_menu_container")?.replaceChildren();
+        return generateMenu({ ...options, parent: "header_menu_container", id: options.id ?? "header_menu" });
+    }
     generateBasicMenu({
         parent: "header_menu_container",
         menu_id: "header_menu",
@@ -29,7 +36,7 @@ export function generateHeaderMenu() {
 }
 
 export function clearHeaderMenu() {
-    $("#header_menu_container").empty();
+    document.getElementById("header_menu_container")?.replaceChildren();
 }
 
 export function generateHeaderTitle() {

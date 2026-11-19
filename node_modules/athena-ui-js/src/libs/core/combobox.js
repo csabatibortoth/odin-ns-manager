@@ -36,7 +36,7 @@ export function createCombobox(options = {}) {
     const element = el("div", { class: cx("combobox", multiple && "combobox-multiple", options.class) }, chips, input, list);
 
     const notify = () => {
-        input.dispatchEvent(new Event("change", { bubbles: true }));
+        input.dispatchEvent(new (input.ownerDocument.defaultView.Event)("change", { bubbles: true }));
         onChange?.(getValue());
     };
     const isOpen = () => !list.hidden;

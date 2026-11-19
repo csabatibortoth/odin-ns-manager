@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.6.0** - see the [release notes](#release-notes).
+Current version: **2.7.0** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -528,8 +528,9 @@ for the details.
 
 The user interface is served by the HTTP(S) server of the management API, at
 `http://localhost:45451` by default, and works with the same accounts. It is
-built on [Athena UI](https://github.com/csabatibortoth/athena-ui) and jQuery,
+built on [Athena UI](https://github.com/csabatibortoth/athena-ui) (2.4) and jQuery,
 which are served from their packages: the page loads nothing from other servers.
+Athena UI itself has no jQuery since 2.0; the manager's own pages and the plugin API (`$page`) still use it.
 The pages are made of the components of Athena UI: its menu with submenus,
 tabs, cards, stats, badges, buttons, pagination, breadcrumbs, the fields of the
 forms, toasts and dialogs, and its router.
@@ -606,7 +607,7 @@ restart. Every graph has its values as a table below it.
 
 ### Screenshots
 
-The screenshots are of a demo installation with sample zones and records, the block lists of StevenBlack and AdAway, and generated queries.
+The screenshots (retaken for 2.7.0) are of a demo installation with sample zones and records, a block list of generated names, and generated queries from a few clients.
 
 | | |
 | --- | --- |
@@ -734,6 +735,30 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.7.0
+
+#### Changed
+
+- **The user interface is built on Athena UI 2.4** (it was 1.x). What you see is the same, what is different is underneath: dialogs are native
+  `<dialog>` elements (the browser traps the focus, closes them with Esc and draws the backdrop), the dropdown of the appearance menu is a native
+  popover, nothing writes an inline style any more (the content security policy of the interface had to be worked around for Athena UI 1.x), and
+  the plain controls come back as elements, which the manager wraps in jQuery as before. The plugin API is unchanged: `$page` is still a jQuery element
+  and `ui` has the same functions.
+- The stylesheet follows: the rules for the old dialog backdrop are gone, the dialog is styled as `dialog.dialog` with the padding of `.dialog-inner`.
+- **The manager's own copies of what Athena UI has are gone** (about 400 lines of the interface and 160 of its stylesheet): the theme and mode
+  (`createThemeManager`, the same saved choice), the menu (`generateMenu`: a bar in the header, tabs at the bottom of the screen below 1000 pixels), the forms
+  (`generateForm` and `showFormDialog`: fields that depend on others, nested names, the messages of the API at their fields), the tables (`generateTable`) and the
+  line charts (`generateChart`: a line breaks where nothing was measured, the axis is the whole range that was asked for, a table of the values below).
+  The graphs show their values when a point is reached with Tab or the pointer; the arrow keys that moved the crosshair are gone.
+
+#### Fixed
+
+- **The form of a record had no label above the field for its value** (the address of an A record, the target of a CNAME ...): the label depends on the type, and was asked for before there was a type.
+
+#### Upgrading from 2.6.1
+
+- Update and restart; nothing has to be changed. Reload the page in the browser once (Ctrl+F5) so it does not keep the old stylesheet.
 
 ### 2.6.1
 
