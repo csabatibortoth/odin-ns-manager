@@ -607,7 +607,7 @@ restart. Every graph has its values as a table below it.
 
 ### Screenshots
 
-The screenshots are of a demo installation with sample zones and records, the block lists of StevenBlack and AdAway, and generated queries.
+The screenshots (retaken for 2.7.0) are of a demo installation with sample zones and records, a block list of generated names, and generated queries from a few clients.
 
 | | |
 | --- | --- |
@@ -751,6 +751,10 @@ temporary file; they need no database.
   (`generateForm` and `showFormDialog`: fields that depend on others, nested names, the messages of the API at their fields), the tables (`generateTable`) and the
   line charts (`generateChart`: a line breaks where nothing was measured, the axis is the whole range that was asked for, a table of the values below).
   The graphs show their values when a point is reached with Tab or the pointer; the arrow keys that moved the crosshair are gone.
+
+#### Fixed
+
+- **The form of a record had no label above the field for its value** (the address of an A record, the target of a CNAME ...): the label depends on the type, and was asked for before there was a type.
 
 #### Upgrading from 2.6.1
 
