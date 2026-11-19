@@ -31,8 +31,8 @@ export function validateValue(value, rules = {}, values = {}) {
     if (isEmpty(value)) return rules.required ? translate("validation.required") : "";
     const text = String(value);
     if (rules.email && !EMAIL_PATTERN.test(text)) return translate("validation.email");
-    if (rules.minLength != null && text.length < rules.minLength) return translate("validation.minLength", { min: rules.minLength });
-    if (rules.maxLength != null && text.length > rules.maxLength) return translate("validation.maxLength", { max: rules.maxLength });
+    if (rules.minLength != null && text.length < rules.minLength) return translate("validation.minLength", { min: rules.minLength, count: rules.minLength });
+    if (rules.maxLength != null && text.length > rules.maxLength) return translate("validation.maxLength", { max: rules.maxLength, count: rules.maxLength });
     if (rules.pattern != null && !new RegExp(rules.pattern).test(text)) return translate("validation.pattern");
     if (rules.min != null && Number(value) < rules.min) return translate("validation.min", { min: rules.min });
     if (rules.max != null && Number(value) > rules.max) return translate("validation.max", { max: rules.max });

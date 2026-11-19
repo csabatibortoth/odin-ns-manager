@@ -7,15 +7,15 @@ import config from "../../config/config.js";
 import { getChangePassword } from "../../config/hooks.js";
 import { translate } from "../../core/i18n.js";
 import { validateAll } from "../../core/validation.js";
-import { generateButton, generateField, generateFormDiv, generateMessage, hashPassword, readControl, showMessage } from "./formUtils.js";
+import { generateButton, generateField, generateFormDiv, generateMessage, readControl, showMessage } from "./formUtils.js";
 
 const FORM_ID = "changePasswordForm";
 
-// Reads the form. Both passwords are SHA-256 hashed when enable_encrypt_password is set.
+// Reads the form. The passwords are returned as typed: send them over HTTPS and hash them on the server.
 export function getChangePasswordFormData() {
     return {
-        currentPassword: hashPassword(readControl(FORM_ID, "current")),
-        newPassword: hashPassword(readControl(FORM_ID, "new"))
+        currentPassword: readControl(FORM_ID, "current"),
+        newPassword: readControl(FORM_ID, "new")
     };
 }
 

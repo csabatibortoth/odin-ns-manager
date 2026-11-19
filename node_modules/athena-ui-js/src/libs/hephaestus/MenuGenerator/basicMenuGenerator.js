@@ -3,12 +3,12 @@
 //LICENCE: MIT
 //Repository: https://github.com/csabatibortoth/athena-ui
 
-/* global HTMLControlGenerator */
 
-import { HTMLElementGenerator } from "../HTMLElementGenerator/src/HTMLElementGenerator.js";
+import { HTMLElementGenerator } from "../../core/elementGenerator.js";
 import { BORDERED_CLASS } from "../../config/config.js";
 import { getNav } from "../../config/hooks.js";
 import { el, uid } from "../../core/dom.js";
+import { generateControl } from "../../core/controls.js";
 
 // Placeholder items used when the application does not provide menuItems.
 export function defaultMenuItems(menuId, count = 3) {
@@ -34,7 +34,7 @@ export function generateMenuWireFrame(options) {
     const menuClass = [options.menu_class, options.bordered && BORDERED_CLASS, options.class]
         .filter(Boolean)
         .join(" ");
-    HTMLControlGenerator({
+    generateControl({
         inputType: "ul",
         parent: options.parent,
         id: options.menu_id,

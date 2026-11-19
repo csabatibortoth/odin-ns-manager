@@ -1,0 +1,154 @@
+/* Athena UI appearance: themes and modes (light / dark).
+
+   THE CONTRACT
+   ------------
+   createThemeManager() (and theme-boot.js, before the page is drawn) put two attributes on <html>:
+
+       <html data-theme="athena" data-mode="dark">
+
+   data-theme is the id of a theme, data-mode is "light" or "dark" (the choice "Like the system" is resolved to one of them).
+   A theme is a pair of blocks that set the design tokens below. Nothing else is needed:
+
+       [data-theme="ocean"][data-mode="light"] { --athena-bg: #f4f9fb; ... }
+       [data-theme="ocean"][data-mode="dark"]  { --athena-bg: #0b1c24; ... }
+
+   The selectors also match any other element that has the two attributes, so a preview (generateThemePicker) or one dark panel on a
+   light page is just an element with data-theme and data-mode.
+
+   TOKENS
+   ------
+   --athena-bg / --athena-fg        page background and text
+   --athena-muted                   secondary text (keep 4.5 : 1 against --athena-bg)
+   --athena-line / --athena-border  borders and dividers
+   --athena-surface / -alt          cards, table heads, striped rows
+   --athena-hover                   hovered and selected rows, menu items
+   --athena-overlay                 the dim layer behind a dialog
+   --athena-accent / -fg            primary buttons, the active menu item, and the text on them
+   --athena-focus                   outline of the element that has the keyboard focus
+   --athena-danger / success / warning / info   states
+   --athena-shadow                  elevation of dialogs and menus
+   --series-1 ... --series-8        the colours of charts, in a fixed order
+
+   To use it: load this file after style.css, put the attributes on <html> (theme-boot.js + createThemeManager), and add your own
+   themes as more pairs of blocks. Without the script the page follows the system (the media query at the end). */
+
+/* ------------------------------------------------------------ Athena */
+
+[data-theme="athena"][data-mode="light"] {
+    color-scheme: light;
+    --athena-bg: #fff;
+    --athena-fg: #1a1a1a;
+    --athena-muted: #5c5c5c;
+    --athena-border: #000;
+    --athena-line: #ccc;
+    --athena-surface: #f2f2f2;
+    --athena-surface-alt: #fafafa;
+    --athena-hover: #e8f0fe;
+    --athena-overlay: rgb(0 0 0 / 40%);
+    --athena-accent: #2f6db5;
+    --athena-accent-fg: #fff;
+    --athena-focus: #1b4f8f;
+    --athena-danger: #c0392b;
+    --athena-success: #1e8449;
+    --athena-warning: #9a6700;
+    --athena-info: #2471a3;
+    --athena-shadow: 0 4px 14px rgb(0 0 0 / 18%);
+    --series-1: #4e79a7; --series-2: #d9731a; --series-3: #d0393b; --series-4: #3f9a95;
+    --series-5: #3f8a3a; --series-6: #a98a00; --series-7: #94598c; --series-8: #5f6878;
+}
+
+[data-theme="athena"][data-mode="dark"] {
+    color-scheme: dark;
+    --athena-bg: #16181d;
+    --athena-fg: #e6e8eb;
+    --athena-muted: #9aa3ad;
+    --athena-border: #3a3f47;
+    --athena-line: #3a3f47;
+    --athena-surface: #23272e;
+    --athena-surface-alt: #1c1f25;
+    --athena-hover: #2b3340;
+    --athena-overlay: rgb(0 0 0 / 65%);
+    --athena-accent: #5b9bd5;
+    --athena-accent-fg: #0b1118;
+    --athena-focus: #8cc0ee;
+    --athena-danger: #ef6b5e;
+    --athena-success: #4cc38a;
+    --athena-warning: #e0b04a;
+    --athena-info: #5b9bd5;
+    --athena-shadow: 0 4px 14px rgb(0 0 0 / 55%);
+    --series-1: #6fa3d6; --series-2: #f0a04b; --series-3: #ef7b7d; --series-4: #6fcfc8;
+    --series-5: #7bc576; --series-6: #f1d36a; --series-7: #c79bc0; --series-8: #a9b1c0;
+}
+
+/* ------------------------------------------------------------ High contrast */
+
+[data-theme="contrast"][data-mode="light"] {
+    color-scheme: light;
+    --athena-bg: #fff;
+    --athena-fg: #000;
+    --athena-muted: #333;
+    --athena-border: #000;
+    --athena-line: #000;
+    --athena-surface: #fff;
+    --athena-surface-alt: #f0f0f0;
+    --athena-hover: #ffe97a;
+    --athena-overlay: rgb(0 0 0 / 70%);
+    --athena-accent: #00389a;
+    --athena-accent-fg: #fff;
+    --athena-focus: #b00020;
+    --athena-danger: #a00000;
+    --athena-success: #005a1e;
+    --athena-warning: #6b4500;
+    --athena-info: #00389a;
+    --athena-shadow: none;
+    --series-1: #00389a; --series-2: #a84300; --series-3: #a00000; --series-4: #006064;
+    --series-5: #005a1e; --series-6: #6b4500; --series-7: #6a1b9a; --series-8: #333;
+}
+
+[data-theme="contrast"][data-mode="dark"] {
+    color-scheme: dark;
+    --athena-bg: #000;
+    --athena-fg: #fff;
+    --athena-muted: #d0d0d0;
+    --athena-border: #fff;
+    --athena-line: #fff;
+    --athena-surface: #000;
+    --athena-surface-alt: #1a1a1a;
+    --athena-hover: #3a3000;
+    --athena-overlay: rgb(0 0 0 / 80%);
+    --athena-accent: #ffe14d;
+    --athena-accent-fg: #000;
+    --athena-focus: #ffe14d;
+    --athena-danger: #ff8a80;
+    --athena-success: #69f0ae;
+    --athena-warning: #ffd740;
+    --athena-info: #80d8ff;
+    --athena-shadow: none;
+    --series-1: #80d8ff; --series-2: #ffd740; --series-3: #ff8a80; --series-4: #69f0ae;
+    --series-5: #ea80fc; --series-6: #ffab40; --series-7: #b9f6ca; --series-8: #e0e0e0;
+}
+
+/* ------------------------------------------------------------ Without the script: follow the system */
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-mode]) {
+        color-scheme: dark;
+        --athena-bg: #16181d;
+        --athena-fg: #e6e8eb;
+        --athena-muted: #9aa3ad;
+        --athena-border: #3a3f47;
+        --athena-line: #3a3f47;
+        --athena-surface: #23272e;
+        --athena-surface-alt: #1c1f25;
+        --athena-hover: #2b3340;
+        --athena-overlay: rgb(0 0 0 / 65%);
+        --athena-accent: #5b9bd5;
+        --athena-accent-fg: #0b1118;
+        --athena-focus: #8cc0ee;
+        --athena-danger: #ef6b5e;
+        --athena-success: #4cc38a;
+        --athena-warning: #e0b04a;
+        --athena-info: #5b9bd5;
+        --athena-shadow: 0 4px 14px rgb(0 0 0 / 55%);
+    }
+}
