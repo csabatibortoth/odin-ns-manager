@@ -7,7 +7,7 @@
 /* global $ */
 
 import {
-    showToast, showDialog as athenaDialog, showFormDialog, generateForm, generateButton, generateBadge, generateCard, generatePagination, generateStat, generateBreadcrumbs,
+    showToast, showDialog as athenaDialog, showFormDialog, generateForm, generateTable, generateButton, generateBadge, generateCard, generatePagination, generateStat, generateBreadcrumbs,
 } from '../vendor/athena-ui/athena-ui.js';
 import { HTMLControlGenerator } from '../vendor/athena-ui/controls.js';
 
@@ -120,19 +120,28 @@ export function showError(err) {
 ///--- Tables
 
 // columns: [{ title, cell: (row) => text or element(s), class }]
-// On a narrow screen every row is shown as a block, with the titles next to the values: see theme.css
+// The table of Athena UI draws it; a cell is a block of its own, so it can hold a badge, a link or buttons. Every cell has the title of its column
+// in data-label: on a narrow screen every row is shown as a block, with the titles next to the values: see theme.css
 export function table(columns, rows, empty = 'Nothing to show.') {
     if (!rows.length) return el('p', { class: 'empty', text: empty });
-    return el(
-        'div',
-        { class: 'table-scroll' },
-        el(
-            'table',
-            { class: 'grid' },
-            el('thead', {}, el('tr', {}, columns.map((column) => el('th', { scope: 'col', class: column.class, text: column.title })))),
-            el('tbody', {}, rows.map((row) => el('tr', {}, columns.map((column) => el('td', { class: column.class, 'data-label': column.title || null }, el('div', { class: 'cell' }, column.cell(row)))))))
-        )
-    );
+    const $holder = el('div', { class: 'table-scroll' });
+    generateTable({
+        parent: $holder[0],
+        class: 'grid',
+        sortable: false,
+        columns: columns.map((column, index) => ({
+            key: `column${index}`,
+            label: column.title,
+            render: (row) => el('div', { class: 'cell' }, column.cell(row))[0],
+        })),
+        cellClass: (row, column) => columns[Number(column.key.slice('column'.length))].class,
+        rows,
+    });
+    // The classes of the columns (num, actions, value) are the ones of the head as well
+    $holder.find('thead th').each((index, head) => {
+        if (columns[index]?.class) head.classList.add(columns[index].class);
+    });
+    return $holder;
 }
 
 // result is the list envelope of the API: { page, pages, total }

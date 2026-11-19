@@ -678,12 +678,18 @@ dialog.dialog {
     border-collapse: collapse;
 }
 
+/* The table of Athena UI has a line around every cell and a tint on every other row: here a line under every row */
 .grid th,
 .grid td {
     padding: 9px 12px;
+    border: 0;
     border-bottom: 1px solid var(--border);
     text-align: left;
     vertical-align: middle;
+}
+
+.grid tbody tr:nth-child(even) {
+    background: none;
 }
 
 .grid th {
