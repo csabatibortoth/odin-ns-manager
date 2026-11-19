@@ -1040,10 +1040,18 @@ dialog.dialog {
     border-bottom: 1px solid var(--border);
 }
 
-.chart .chart-data-table th {
+.chart .chart-data-table thead th {
     position: sticky;
     top: 0;
     background: var(--surface-2);
+}
+
+/* The time of a row is the first cell: a plain cell, on one line */
+.chart .chart-data-table tbody th {
+    background: none;
+    font-weight: normal;
+    text-align: left;
+    white-space: nowrap;
 }
 
 /* Blocklists */
