@@ -160,10 +160,11 @@ h3 {
     stroke: none;
 }
 
-/* Menu: the menu of Athena UI, with its submenus. On a wide screen it is the
+/* Menu: the menu of Athena UI (generateMenu). On a wide screen it is the
    bar of the header, and every group opens as a dropdown. On a tablet and a
    phone it is a bar of tabs at the bottom of the screen, and every group
-   opens as a sheet above it. Nobody is signed in: there is no menu. */
+   opens as a sheet above it. Nobody is signed in: there is no menu. Athena UI
+   has the structure and the behaviour; here are the colors of the header. */
 
 body:not(.signed-in) #header_menu_container {
     display: none;
@@ -180,77 +181,54 @@ body:not(.signed-in) #header_tools {
     display: flex;
 }
 
-.header-menu {
+.athena-menu-bar {
     display: flex;
+    flex: 1;
+    min-width: 0;
+}
+
+.athena-menu-bar .athena-menu-list {
     flex: 1;
     flex-wrap: nowrap;
     align-items: stretch;
     gap: 2px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
 }
 
-.header-menu > li {
-    position: relative;
+.athena-menu-bar .menu-item {
     display: flex;
     align-items: stretch;
-    margin: 0;
 }
 
-.header-menu > li > span {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.athena-menu-bar > .athena-menu-list > .menu-item > .menu-control {
     padding: 3px 14px 0;
-    border-bottom: 3px solid transparent;
+    border-radius: 0;
     color: inherit;
-    cursor: pointer;
-    user-select: none;
     white-space: nowrap;
 }
 
-.header-menu > li > span:hover,
-.header-menu > li > span[aria-expanded="true"] {
+.athena-menu-bar > .athena-menu-list > .menu-item > .menu-control:hover,
+.athena-menu-bar > .athena-menu-list > .menu-item > .menu-control[aria-expanded="true"] {
     background: rgb(255 255 255 / 14%);
 }
 
-.header-menu > li.active > span {
-    border-bottom-color: var(--header-accent);
+.athena-menu .menu-control.is-active,
+.athena-menu .has-active > .menu-control {
+    box-shadow: inset 0 -3px 0 var(--header-accent);
     font-weight: 600;
 }
 
-.menu-label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* The arrow of a group: drawn here instead of the character of Athena UI */
-.menu-parent::after {
-    content: "";
-    width: 6px;
-    height: 6px;
-    margin: -3px 0 0 2px;
-    border: solid currentcolor;
-    border-width: 0 2px 2px 0;
-    font-size: inherit;
-    transform: rotate(45deg);
-}
-
-.header-menu .menu-end {
-    margin-left: auto;
-}
-
-.header-menu .avatar {
-    width: 28px;
-    height: 28px;
+.athena-menu .menu-avatar {
     background: var(--header-text);
     color: var(--header-bg);
-    font-size: 0.75rem;
 }
 
-.submenu {
+.athena-menu .menu-caret {
+    font-size: 0.8em;
+    opacity: 0.8;
+}
+
+/* The dropdown of a group, and the entries in it */
+.athena-menu .menu-sheet {
     min-width: 220px;
     margin-top: 0;
     padding: 6px;
@@ -259,26 +237,21 @@ body:not(.signed-in) #header_tools {
     color: var(--text);
 }
 
-.menu-end .submenu {
-    right: 0;
-    left: auto;
-}
-
-.submenu-item {
-    display: flex;
-    align-items: center;
+.athena-menu .menu-sheet .menu-control {
     gap: 8px;
     padding: 9px 12px;
     border-radius: 6px;
+    color: var(--text);
+    box-shadow: none;
+    font-weight: normal;
 }
 
-.submenu-item:hover:not([aria-disabled="true"]),
-.submenu-item:focus {
+.athena-menu .menu-sheet .menu-control:hover:not([aria-disabled="true"]),
+.athena-menu .menu-sheet .menu-control:focus-visible {
     background: var(--surface-2);
-    outline: none;
 }
 
-.submenu-item[aria-current="page"] {
+.athena-menu .menu-sheet .menu-control.is-active {
     box-shadow: inset 3px 0 0 var(--accent);
     font-weight: 600;
 }
@@ -350,66 +323,56 @@ body:not(.signed-in) #header_tools {
         margin-left: auto;
     }
 
-    body.signed-in #header_menu_container {
-        position: fixed;
+    /* The bar of tabs at the bottom of the screen, and the sheet of a group above it */
+    .athena-menu-bottom-tabs {
         z-index: 70;
-        right: 0;
-        bottom: 0;
-        left: 0;
-        align-self: auto;
         height: calc(var(--bar-h) + env(safe-area-inset-bottom));
         padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        border-top: 0;
         background: var(--header-bg);
         color: var(--header-text);
         box-shadow: 0 -2px 12px rgb(0 0 0 / 22%);
     }
 
-    .header-menu {
-        gap: 0;
+    .athena-menu-bottom-tabs .athena-menu-list {
+        height: 100%;
+        align-items: stretch;
     }
 
-    .header-menu > li {
-        flex: 1 1 0;
+    .athena-menu-bottom-tabs .menu-item {
+        display: flex;
         min-width: 0;
     }
 
-    .header-menu > li > span {
-        flex-direction: column;
+    .athena-menu-bottom-tabs .menu-control {
         justify-content: center;
-        gap: 2px;
-        width: 100%;
-        padding: 4px 2px;
+        border-radius: 0;
         border-top: 3px solid transparent;
-        border-bottom: 0;
+        color: inherit;
         font-size: 0.72rem;
         line-height: 1.2;
+        text-decoration: none;
     }
 
-    .header-menu > li.active > span {
+    .athena-menu-bottom-tabs .menu-control.is-active,
+    .athena-menu-bottom-tabs .has-active > .menu-control {
+        box-shadow: none;
         border-top-color: var(--header-accent);
     }
 
-    .header-menu .menu-label {
+    .athena-menu-bottom-tabs .menu-label {
         max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
-    .menu-parent::after {
+    .athena-menu-bottom-tabs .menu-caret {
         display: none;
     }
 
-    .header-menu .menu-end {
-        margin-left: 0;
-    }
-
-    /* The sheet of a group, above the bar */
-    .submenu,
-    .menu-end .submenu {
-        position: fixed;
+    .athena-menu-bottom-tabs .menu-sheet {
         z-index: 1;
-        right: 0;
-        bottom: calc(var(--bar-h) + env(safe-area-inset-bottom));
-        left: 0;
-        top: auto;
+        inset: auto 0 calc(var(--bar-h) + env(safe-area-inset-bottom));
         max-width: 600px;
         max-height: 70vh;
         margin: 0 auto;
@@ -421,7 +384,8 @@ body:not(.signed-in) #header_tools {
         box-shadow: 0 -8px 28px rgb(0 0 0 / 30%);
     }
 
-    .submenu::before {
+    /* The name of the group above its pages, and entries that are large enough for a finger */
+    .athena-menu-bottom-tabs .menu-sheet::before {
         content: attr(aria-label);
         display: block;
         padding: 8px 12px 6px;
@@ -432,15 +396,22 @@ body:not(.signed-in) #header_tools {
         text-transform: uppercase;
     }
 
-    /* Large enough for a finger */
-    .submenu-item {
+    .athena-menu-bottom-tabs .menu-sheet .menu-control {
+        flex-direction: row;
+        justify-content: flex-start;
         min-height: 48px;
         padding: 12px;
+        border-top: 0;
         font-size: 1rem;
+        text-align: left;
     }
 
-    /* The page behind the sheet is dimmed; a touch on it closes the sheet. It lies under the header (60), which holds the sheet: the sheet must stay above it. */
-    body:has(#header_menu .submenu:not([hidden]))::after {
+    .athena-menu-bottom-tabs .menu-sheet .menu-control.is-active {
+        box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    /* The page behind the sheet is dimmed. It lies under the header (60), which holds the sheet: the sheet must stay above it. */
+    body:has(.athena-menu-bottom-tabs .menu-sheet:not([hidden]))::after {
         content: "";
         position: fixed;
         z-index: 55;
@@ -458,7 +429,7 @@ body:not(.signed-in) #header_tools {
 }
 
 @media (min-width: 640px) and (max-width: 999px) {
-    .header-menu > li > span {
+    .athena-menu-bottom-tabs .menu-control {
         font-size: 0.8rem;
     }
 
