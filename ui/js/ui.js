@@ -4,11 +4,12 @@
 // dialogs; the plain controls with its HTMLControlGenerator. What a page asks
 // for is the same as before, so the pages do not know which is which.
 
-/* global $, HTMLControlGenerator */
+/* global $ */
 
 import {
     showToast, showDialog as athenaDialog, generateButton, generateBadge, generateCard, generatePagination, generateField, generateStat, generateBreadcrumbs,
 } from '../vendor/athena-ui/athena-ui.js';
+import { HTMLControlGenerator } from '../vendor/athena-ui/controls.js';
 
 ///--- Elements
 
@@ -28,7 +29,8 @@ export function el(tag, props = {}, ...children) {
     return $element;
 }
 
-export const control = (options) => HTMLControlGenerator.create(options);
+// The plain controls of Athena UI come back as elements (they were jQuery objects before 2.0): the pages work with jQuery objects
+export const control = (options) => $(HTMLControlGenerator.create(options));
 
 // A button that shows a spinner while its action runs; a failure is shown as a notice.
 // kind: 'primary', 'danger', 'small', or two of them.
@@ -164,7 +166,7 @@ export function debounce(action, wait = 300) {
 // A form in a dialog of Athena UI. The dialog has no buttons of its own: the
 // form has its own, and closes the dialog when it succeeds.
 export function closeDialog() {
-    document.querySelectorAll('.dialog-backdrop .dialog-close').forEach((closeButton) => closeButton.click());
+    document.querySelectorAll('dialog.dialog .dialog-close').forEach((closeButton) => closeButton.click());
 }
 
 function setPath(target, path, value) {

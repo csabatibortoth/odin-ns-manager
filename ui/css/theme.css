@@ -513,11 +513,17 @@ body:not(.signed-in) #header_tools {
     color: inherit;
 }
 
-.dialog {
-    padding: 20px 22px;
+/* A dialog is a native <dialog> (Athena UI 2.0): the browser puts it in the top layer and draws the backdrop (colored by --athena-overlay) */
+
+dialog.dialog {
     border: 1px solid var(--border);
+    border-radius: 10px;
     background: var(--surface);
     color: var(--text);
+}
+
+.dialog-inner {
+    padding: 20px 22px;
 }
 
 .dialog-title {
@@ -1285,25 +1291,6 @@ body:not(.signed-in) #header_tools {
     width: 100%;
 }
 
-/* The backdrop of a dialog of Athena UI. It asks for display: block with a style
-   attribute, which the content security policy does not allow: it is done here. */
-
-.modal.dialog-backdrop {
-    display: block;
-    position: fixed;
-    z-index: 1000;
-    inset: 0;
-    padding: 6vh 16px 24px;
-    overflow: auto;
-    background: var(--athena-overlay);
-}
-
-.modal-content {
-    max-width: 560px;
-    margin: 0 auto;
-    border-radius: 10px;
-}
-
 .dialog-footer:empty {
     display: none;
 }
@@ -1410,12 +1397,11 @@ input[type="file"].input {
         justify-content: space-between;
     }
 
-    .modal.dialog-backdrop {
-        padding: 8vh 8px 8px;
+    dialog.dialog {
+        width: calc(100% - 16px);
     }
 
-    .dialog {
-        width: 100%;
+    .dialog-inner {
         padding: 16px 14px;
     }
 
