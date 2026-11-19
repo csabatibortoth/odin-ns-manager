@@ -746,6 +746,11 @@ temporary file; they need no database.
   the plain controls come back as elements, which the manager wraps in jQuery as before. The plugin API is unchanged: `$page` is still a jQuery element
   and `ui` has the same functions.
 - The stylesheet follows: the rules for the old dialog backdrop are gone, the dialog is styled as `dialog.dialog` with the padding of `.dialog-inner`.
+- **The manager's own copies of what Athena UI has are gone** (about 400 lines of the interface and 160 of its stylesheet): the theme and mode
+  (`createThemeManager`, the same saved choice), the menu (`generateMenu`: a bar in the header, tabs at the bottom of the screen below 1000 pixels), the forms
+  (`generateForm` and `showFormDialog`: fields that depend on others, nested names, the messages of the API at their fields), the tables (`generateTable`) and the
+  line charts (`generateChart`: a line breaks where nothing was measured, the axis is the whole range that was asked for, a table of the values below).
+  The graphs show their values when a point is reached with Tab or the pointer; the arrow keys that moved the crosshair are gone.
 
 #### Upgrading from 2.6.1
 
