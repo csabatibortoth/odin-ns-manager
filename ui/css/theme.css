@@ -1195,20 +1195,23 @@ dialog.dialog {
     background: var(--surface);
 }
 
-.form-error {
+/* A failure of a form: the message of the form of Athena UI (it is empty, and not shown, until something fails), and the same look in a result */
+.form-error,
+.form-message-error {
     display: block;
-    color: var(--danger);
-    font-size: 0.9rem;
-}
-
-.form-error {
     margin: 0 0 12px;
     padding: 8px 12px;
     border-radius: 6px;
     background: var(--danger-bg);
+    color: var(--danger);
+    font-size: 0.9rem;
 }
 
-.form .actions {
+.form .form-message:empty {
+    display: none;
+}
+
+.form .form-actions {
     display: flex;
     flex-direction: row-reverse;
     gap: 8px;
@@ -1219,7 +1222,7 @@ dialog.dialog {
     max-width: 460px;
 }
 
-.form.inline .actions {
+.form.inline .form-actions {
     flex-direction: row;
 }
 

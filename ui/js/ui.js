@@ -7,7 +7,7 @@
 /* global $ */
 
 import {
-    showToast, showDialog as athenaDialog, generateButton, generateBadge, generateCard, generatePagination, generateField, generateStat, generateBreadcrumbs,
+    showToast, showDialog as athenaDialog, showFormDialog, generateForm, generateButton, generateBadge, generateCard, generatePagination, generateStat, generateBreadcrumbs,
 } from '../vendor/athena-ui/athena-ui.js';
 import { HTMLControlGenerator } from '../vendor/athena-ui/controls.js';
 
@@ -163,160 +163,82 @@ export function debounce(action, wait = 300) {
 
 ///--- Dialogs
 
-// A form in a dialog of Athena UI. The dialog has no buttons of its own: the
-// form has its own, and closes the dialog when it succeeds.
 export function closeDialog() {
     document.querySelectorAll('dialog.dialog .dialog-close').forEach((closeButton) => closeButton.click());
 }
 
-function setPath(target, path, value) {
-    const keys = path.split('.');
-    const last = keys.pop();
-    let node = target;
-    for (const key of keys) node = node[key] ??= {};
-    node[last] = value;
-}
-
-// One field of a form: the field of Athena UI, with what the pages need on top
-function buildField(def) {
-    const type = def.type || 'text';
-    const isSelect = type === 'select';
-    const label = (raw) => (typeof def.label === 'function' ? def.label(raw) : def.label);
-    const field = generateField({
-        name: def.name,
-        type,
-        label: label({}),
-        help: def.hint,
-        value: isSelect ? String(def.value ?? '') : def.value ?? undefined,
-        options: def.options?.map((option) => ({ ...option, value: String(option.value) })),
-        placeholder: def.placeholder,
-        min: def.min,
-        max: def.max,
-        maxLength: def.maxlength,
-        autocomplete: def.autocomplete || 'off',
-        disabled: Boolean(def.disabled),
-        required: Boolean(def.required) && type !== 'checkbox',
+// The fields of the pages, as the form of Athena UI wants them.
+// fields: [{ name, label, type, value, options, required, hint, placeholder, disabled, blank, show: (raw) => boolean }]
+// - label may be a function of the raw values; show hides a field (and it is not sent) while it returns false;
+// - the names are nested by their dots: 'soa.host' is the host of soa in the values to send;
+// - what is left empty is left out; blank: 'null' or blank: 'empty' sends null or '' instead;
+// - what is typed is trimmed (not a password), and a disabled field, or one with send: false, is not sent.
+function fieldsOf(fields) {
+    return fields.map((def) => {
+        const type = def.type || 'text';
+        const text = type !== 'checkbox';
+        return {
+            name: def.name,
+            type,
+            label: def.label,
+            help: def.hint,
+            value: type === 'select' ? String(def.value ?? '') : def.value ?? undefined,
+            options: def.options?.map((option) => ({ ...option, value: String(option.value) })),
+            placeholder: def.placeholder,
+            min: def.min,
+            max: def.max,
+            maxLength: def.maxlength,
+            autocomplete: def.autocomplete || 'off',
+            disabled: Boolean(def.disabled),
+            required: Boolean(def.required) && text,
+            show: def.show,
+            send: def.send !== false && !def.disabled,
+            trim: type !== 'password' && text,
+            empty: text ? { null: 'null', empty: 'empty' }[def.blank] || 'omit' : undefined,
+        };
     });
-    // The text of the label, without the star that marks a required field
-    const caption = field.element.querySelector('.field-label-text');
-    return {
-        def,
-        field,
-        visible: true,
-        setLabel: (raw) => {
-            if (caption && caption.firstChild) caption.firstChild.nodeValue = label(raw);
-        },
-    };
 }
 
-// What is typed, by the name of the field
-const rawValues = (rows) => Object.fromEntries(rows.map(({ def, field }) => [def.name, field.getValue()]));
-
-// The values to send: nested by the dots in the names of the fields. Fields
-// that are hidden, disabled or left empty are left out; a field with
-// blank: 'null' or blank: 'empty' sends null or '' when it is empty.
-function collectValues(rows) {
-    const values = {};
-    for (const { def, field, visible } of rows) {
-        if (!visible || def.disabled || def.send === false) continue;
-
-        let value = field.getValue();
-        if (def.type !== 'checkbox') {
-            if (typeof value === 'string' && def.type !== 'password') value = value.trim();
-            if (value === '' || value === undefined || Number.isNaN(value)) value = { null: null, empty: '' }[def.blank];
-        }
-        if (value !== undefined) setPath(values, def.name, value);
-    }
-    return values;
-}
-
-// A form.
-// fields: [{ name, label, type, value, options, required, hint, placeholder,
-//            disabled, blank, show: (raw) => boolean }] - label may be a function of the raw values.
-// onSubmit(values, raw) saves; when it fails with details: { field: message },
-// the messages are shown at their fields.
-// inDialog: the form is the content of a dialog, which closes when it succeeds.
-// Otherwise it stays on its page; with `clear` it is emptied when it succeeds.
-function buildForm({ intro, fields, submitLabel = 'Save', onSubmit, inDialog = false, clear = false }) {
-    const rows = fields.map(buildField);
-    const $error = el('p', { class: 'form-error', role: 'alert' }).hide();
-    const submit = generateButton({ text: submitLabel, variant: 'primary', type: 'submit' });
-    const $form = el(
-        'form',
-        { class: inDialog ? 'athena-form form' : 'athena-form form inline', novalidate: true },
-        intro ? el('p', { class: 'hint', text: intro }) : null,
-        $error,
-        rows.map((row) => row.field.element),
-        el('div', { class: 'actions' }, submit.element, inDialog ? generateButton({ text: 'Cancel', variant: 'secondary', onclick: closeDialog }).element : null)
-    );
-
-    const arrange = () => {
-        const raw = rawValues(rows);
-        for (const row of rows) {
-            row.visible = !row.def.show || Boolean(row.def.show(raw));
-            $(row.field.element).toggle(row.visible);
-            // A hidden field must not stop the form from being sent
-            $(row.field.element).find('input, select, textarea').prop('disabled', !row.visible || Boolean(row.def.disabled));
-            row.setLabel(raw);
-        }
-    };
-
-    const showFailure = (err) => {
-        const messages = [];
-        for (const [name, message] of Object.entries(err.details && typeof err.details === 'object' ? err.details : {})) {
-            const row = rows.find((candidate) => candidate.def.name === name && candidate.visible);
-            if (row) row.field.setError(message);
-            else messages.push(message);
-        }
-        const shown = $form.find('.field-error').filter((_, node) => node.textContent).length > 0;
-        const text = [shown && !messages.length ? '' : err.message, ...messages].filter(Boolean).join(': ');
-        $error.text(text || 'Check the marked fields').show();
-    };
-
-    $form.on('change', 'select, input[type=checkbox]', arrange);
-    $form.on('submit', async (event) => {
-        event.preventDefault();
-        $error.hide();
-        rows.forEach((row) => row.field.setError(''));
-
-        // The fields are checked as they are filled in; what is not valid stops the form
-        const invalid = rows.filter((row) => row.visible && !row.def.disabled && row.field.validate());
-        if (invalid.length) {
-            invalid[0].field.focus();
-            return;
-        }
-
-        submit.setLoading(true);
+// What a failed save of a form shows: the messages at their fields come from the API (err.details), and an expired session is reported by its own handler
+function saving(onSubmit, { inDialog }) {
+    return async (values, form) => {
         try {
-            await onSubmit(collectValues(rows), rawValues(rows));
-            if (inDialog) closeDialog();
-            else if (clear) {
-                $form[0].reset();
-                rows.forEach((row) => row.field.resetState());
-                arrange();
-            }
+            await onSubmit(values, form.getRawValues());
         } catch (err) {
-            // An expired session is reported by its own handler
-            if (err?.status !== 401) showFailure(err);
-            else if (inDialog) closeDialog();
-        } finally {
-            submit.setLoading(false);
+            if (err?.status !== 401) throw err;
+            if (inDialog) closeDialog();
         }
+    };
+}
+
+// A form on the page. onSubmit(values, raw) saves; when it fails with details: { field: message }, the messages are shown at their fields.
+// With `clear` the form is emptied when it succeeds. intro: a text above the fields.
+export function inlineForm({ intro, fields, submitLabel = 'Save', onSubmit, clear = false }) {
+    const form = generateForm({
+        fields: fieldsOf(fields),
+        nested: true,
+        submitText: submitLabel,
+        onSubmit: async (values, handle) => {
+            await saving(onSubmit, { inDialog: false })(values, handle);
+            if (clear) handle.reset();
+        },
     });
-
-    arrange();
-    return $form;
+    form.element.classList.add('form', 'inline');
+    if (intro) form.element.prepend(el('p', { class: 'hint', text: intro })[0]);
+    return $(form.element);
 }
 
-// A form in a dialog; see buildForm
-export function formDialog({ title, ...form }) {
-    const $form = buildForm({ ...form, inDialog: true });
-    athenaDialog({ title, content: $form[0], buttons: [] });
-    $form.find('input:enabled:not([readonly]), select:enabled').first().trigger('focus');
+// A form in a dialog of Athena UI, with its own Save and Cancel; the dialog closes when it succeeds
+export function formDialog({ title, intro, fields, submitLabel = 'Save', onSubmit }) {
+    showFormDialog({
+        title,
+        intro,
+        fields: fieldsOf(fields),
+        nested: true,
+        submitText: submitLabel,
+        onSubmit: saving(onSubmit, { inDialog: true }),
+    });
 }
-
-// A form on the page; see buildForm
-export const inlineForm = (form) => buildForm(form);
 
 // Asks before something that can not be undone. The dialog stays open, with
 // the failure in it, while onConfirm fails.
