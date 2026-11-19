@@ -245,6 +245,8 @@ export function formDialog({ title, intro, fields, submitLabel = 'Save', onSubmi
         fields: fieldsOf(fields),
         nested: true,
         submitText: submitLabel,
+        // The stylesheet knows the forms of the manager by the class "form"
+        onReady: (form) => form.element.classList.add('form'),
         onSubmit: saving(onSubmit, { inDialog: true }),
     });
 }
