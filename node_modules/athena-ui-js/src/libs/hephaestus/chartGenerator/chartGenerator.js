@@ -11,7 +11,7 @@ import { getLocale, translate } from "../../core/i18n.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const SERIES_COLORS = 8;
-const MARGIN = { top: 40, right: 20, bottom: 50, left: 55 };
+const DEFAULT_MARGIN = { top: 40, right: 20, bottom: 50, left: 55 };
 const DOT_LIMIT = 80;       // up to this many points in view every point is a dot with a tooltip; more: the tooltip follows the pointer
 
 const svgEl = (tag, attrs = {}, text) => {
@@ -91,6 +91,7 @@ export function decimate(indices, values, buckets) {
 /* ------------------PARTS------------------- */
 
 function addLegend(svg, entries, width, height, ctx) {
+    const MARGIN = ctx.margin;
     let x = MARGIN.left;
     const y = height - 12;
     entries.forEach(({ name, props, series }) => {
@@ -160,7 +161,7 @@ function addTip(ctx, node, x, y, lines) {
 }
 
 // Draws the value grid and the y axis for the range [min, min + scale.span].
-function addValueAxis(svg, { min, scale, width, height }) {
+function addValueAxis(svg, { min, scale, width, height, margin: MARGIN, format = formatNumber }) {
     const plotW = width - MARGIN.left - MARGIN.right;
     const plotH = height - MARGIN.top - MARGIN.bottom;
     const y = value => MARGIN.top + plotH - ((value - min) / scale.span) * plotH;
@@ -168,7 +169,7 @@ function addValueAxis(svg, { min, scale, width, height }) {
     for (let i = 0; i <= ticks; i++) {
         const v = min + i * scale.step;
         svg.append(svgEl("line", { x1: MARGIN.left, x2: MARGIN.left + plotW, y1: y(v), y2: y(v), class: "chart-grid" }));
-        svg.append(svgEl("text", { x: MARGIN.left - 8, y: y(v) + 4, "text-anchor": "end", class: "chart-tick" }, formatNumber(v)));
+        svg.append(svgEl("text", { x: MARGIN.left - 8, y: y(v) + 4, "text-anchor": "end", class: "chart-tick" }, format(v)));
     }
     svg.append(svgEl("line", { x1: MARGIN.left, x2: MARGIN.left, y1: MARGIN.top, y2: MARGIN.top + plotH, class: "chart-axis" }));
     // The category axis sits at zero when the range includes it, so negative bars hang below it.
@@ -190,9 +191,10 @@ function valueRange(values, zero = true) {
 /* ------------------DRAWERS------------------- */
 
 function drawBar(svg, ctx) {
-    const { labels, series, width, height } = ctx;
+    const { labels, series, width, height, format } = ctx;
+    const MARGIN = ctx.margin;
     const { min, scale } = valueRange(series.flatMap(s => s.data));
-    const { y, plotW, plotH } = addValueAxis(svg, { min, scale, width, height });
+    const { y, plotW, plotH } = addValueAxis(svg, { min, scale, width, height, margin: MARGIN, format: ctx.tickFormat });
     const band = plotW / Math.max(labels.length, 1);
     labels.forEach((label, i) => svg.append(svgEl("text",
         { x: MARGIN.left + band * (i + 0.5), y: MARGIN.top + plotH + 18, "text-anchor": "middle", class: "chart-tick" }, label)));
@@ -206,19 +208,21 @@ function drawBar(svg, ctx) {
             "data-series": si, ...seriesProps(s, si)
         });
         bar.setAttribute("class", `chart-bar ${bar.getAttribute("class") ?? ""}`.trim());
-        addTip(ctx, bar, x + barWidth / 2, top, [`${s.name ?? ""} ${labels[i] ?? ""}`.trim(), formatNumber(value)]);
+        addTip(ctx, bar, x + barWidth / 2, top, [`${s.name ?? ""} ${labels[i] ?? ""}`.trim(), format(value)]);
         svg.append(bar);
     }));
 }
 
 // Line and area charts, with a category or a time axis, zoom (a range of the x axis) and long series (no dots, a pointer tooltip).
 function drawLine(svg, ctx) {
-    const { labels, series, width, height, times, area, options, zoom } = ctx;
+    const { labels, series, width, height, times, area, options, zoom, format } = ctx;
+    const MARGIN = ctx.margin;
     const plotW = width - MARGIN.left - MARGIN.right;
     const plotH = height - MARGIN.top - MARGIN.bottom;
     const count = Math.max(...series.map(s => s.data.length));
     const position = i => (times ? times[i] : i);                          // x position of point i in the units of the axis
-    const full = times ? { from: Math.min(...times.slice(0, count)), to: Math.max(...times.slice(0, count)) } : { from: -0.5, to: count - 0.5 };
+    // The range of the x axis: what the data covers, or the one asked for (a window of the last hour that is only half measured)
+    const full = times ? (options.timeRange && options.timeRange.to > options.timeRange.from ? { from: toTime(options.timeRange.from), to: toTime(options.timeRange.to) } : { from: Math.min(...times.slice(0, count)), to: Math.max(...times.slice(0, count)) }) : { from: -0.5, to: count - 0.5 };
     const view = zoom ? { from: Math.max(zoom.from, full.from), to: Math.min(zoom.to, full.to) } : full;
     if (!(view.to > view.from)) Object.assign(view, full);
     const x = p => MARGIN.left + ((p - view.from) / (view.to - view.from || 1)) * plotW;
@@ -234,7 +238,7 @@ function drawLine(svg, ctx) {
     });
     const zeroBased = area || options.zero !== false;
     const { min, scale } = valueRange(series.flatMap((s, si) => visible[si].map(i => s.data[i])), zeroBased);
-    const { y, baseline } = addValueAxis(svg, { min, scale, width, height });
+    const { y, baseline } = addValueAxis(svg, { min, scale, width, height, margin: MARGIN, format: ctx.tickFormat });
 
     // x axis
     if (times) {
@@ -264,22 +268,33 @@ function drawLine(svg, ctx) {
         const inside = visible[si];
         const lo = inside.length ? inside[0] : 0;
         const hi = inside.length ? inside.at(-1) : -1;
-        const around = [];
-        for (let i = Math.max(lo - 1, 0); i <= Math.min(hi + 1, s.data.length - 1); i++) if (Number.isFinite(s.data[i])) around.push(i);
-        const drawn = decimate(around, s.data, Math.floor(plotW));
-        const points = drawn.map(i => [x(position(i)), y(s.data[i])]);
+        // Without `gaps` a missing value is skipped and the line goes on; with it the line breaks there, and a point on its own is a dot
+        const runs = [];
+        let run = [];
+        for (let i = Math.max(lo - 1, 0); i <= Math.min(hi + 1, s.data.length - 1); i++) {
+            if (Number.isFinite(s.data[i])) run.push(i);
+            else if (options.gaps) {
+                if (run.length) runs.push(run);
+                run = [];
+            }
+        }
+        if (run.length) runs.push(run);
         const group = svgEl("g", { "data-series": si, ...seriesProps(s, si) });
         const clipped = svgEl("g", { "clip-path": `url(#${clipId})` });
-        if (area && points.length) {
-            const outline = [`M${points[0][0]},${baseline}`, ...points.map(p => `L${p.join(",")}`), `L${points.at(-1)[0]},${baseline}`, "Z"];
-            clipped.append(svgEl("path", { d: outline.join(" "), class: "chart-area" }));
+        for (const members of runs) {
+            const points = decimate(members, s.data, Math.floor(plotW)).map(i => [x(position(i)), y(s.data[i])]);
+            if (area && points.length) {
+                const outline = [`M${points[0][0]},${baseline}`, ...points.map(p => `L${p.join(",")}`), `L${points.at(-1)[0]},${baseline}`, "Z"];
+                clipped.append(svgEl("path", { d: outline.join(" "), class: "chart-area" }));
+            }
+            if (points.length === 1 && options.gaps) clipped.append(svgEl("circle", { cx: points[0][0], cy: points[0][1], r: 2.5, class: "chart-point chart-lone-point" }));
+            else clipped.append(svgEl("polyline", { points: points.map(p => p.join(",")).join(" "), class: "chart-line", fill: "none", pathLength: 1 }));
         }
-        clipped.append(svgEl("polyline", { points: points.map(p => p.join(",")).join(" "), class: "chart-line", fill: "none", pathLength: 1 }));
         group.append(clipped);
         if (dotted) {
             for (const i of inside) {
                 const dot = svgEl("circle", { cx: x(position(i)), cy: y(s.data[i]), r: 4, class: "chart-point" });
-                addTip(ctx, dot, x(position(i)), y(s.data[i]), [`${s.name ?? ""} ${when(i)}`.trim(), formatNumber(s.data[i])]);
+                addTip(ctx, dot, x(position(i)), y(s.data[i]), [`${s.name ?? ""} ${when(i)}`.trim(), format(s.data[i])]);
                 group.append(dot);
             }
         }
@@ -321,7 +336,7 @@ function drawLine(svg, ctx) {
         marker.setAttribute("x1", px);
         marker.setAttribute("x2", px);
         marker.removeAttribute("display");
-        const lines = [when(index), ...series.map(s => (Number.isFinite(s.data[index]) ? `${s.name ? `${s.name}: ` : ""}${formatNumber(s.data[index])}` : null)).filter(Boolean)];
+        const lines = [when(index), ...series.map(s => (Number.isFinite(s.data[index]) ? `${s.name ? `${s.name}: ` : ""}${format(s.data[index])}` : null)).filter(Boolean)];
         const top = Math.min(...series.map(s => (Number.isFinite(s.data[index]) ? y(s.data[index]) : Infinity)));
         ctx.tooltip.show(px, Number.isFinite(top) ? top : MARGIN.top, lines);
     };
@@ -396,7 +411,7 @@ function drawLine(svg, ctx) {
 
 // A small line without axes, legend or title: for a table cell or a stat tile. Its tooltips still work.
 function drawSparkline(svg, ctx) {
-    const { series, width, height } = ctx;
+    const { series, width, height, format } = ctx;
     const s = series[0];
     const values = s.data.filter(Number.isFinite);
     const min = Math.min(...values);
@@ -410,14 +425,15 @@ function drawSparkline(svg, ctx) {
     const last = points.at(-1);
     if (last) {
         const dot = svgEl("circle", { cx: last[0], cy: last[1], r: 2.5, class: "chart-point" });
-        addTip(ctx, dot, last[0], last[1], [formatNumber(values.at(-1))]);
+        addTip(ctx, dot, last[0], last[1], [format(values.at(-1))]);
         group.append(dot);
     }
     svg.append(group);
 }
 
 function drawPie(svg, ctx) {
-    const { labels, series, width, height, donut } = ctx;
+    const { labels, series, width, height, donut, format } = ctx;
+    const MARGIN = ctx.margin;
     const data = series[0].data.map(v => Math.max(0, v));
     const total = data.reduce((a, b) => a + b, 0);
     const cx = width / 2;
@@ -447,7 +463,7 @@ function drawPie(svg, ctx) {
         slice.setAttribute("data-series", i);
         const mid = start + sweep / 2;
         const [tx, ty] = point(r * (donut ? (1 + 0.55) / 2 : 0.6), mid).split(",").map(Number);
-        addTip(ctx, slice, tx, ty, [labels[i] ?? "", `${formatNumber(value)} (${Math.round(value / total * 100)}%)`]);
+        addTip(ctx, slice, tx, ty, [labels[i] ?? "", `${format(value)} (${Math.round(value / total * 100)}%)`]);
         svg.append(slice);
         start += sweep;
     });
@@ -467,7 +483,7 @@ const DRAWERS = {
 /* ------------------TABLE OF VALUES------------------- */
 
 // The same numbers as a table, for screen readers and for people who want to read them off or copy them.
-function buildDataTable({ labels, series, times, title, type }) {
+function buildDataTable({ labels, series, times, title, type, format = formatNumber }) {
     const details = document.createElement("details");
     details.className = "chart-data";
     const summary = document.createElement("summary");
@@ -493,7 +509,7 @@ function buildDataTable({ labels, series, times, title, type }) {
         head.scope = "row";
         head.textContent = times ? when.format(times[i]) : (labels[i] ?? "");
         row.append(head);
-        for (const s of shown) row.insertCell().textContent = s.data[i] == null ? "" : formatNumber(s.data[i]);
+        for (const s of shown) row.insertCell().textContent = s.data[i] == null ? "" : format(s.data[i]);
     }
     details.append(summary, table);
     return details;
@@ -526,6 +542,14 @@ function buildDataTable({ labels, series, times, title, type }) {
  * @param {number[]} [options.hiddenSeries] the series (or slices) that are hidden at the start; a person hides and shows them with the legend, and a redraw keeps that
  * @param {boolean} [options.animate=true] the first drawing animates: bars grow, a line is drawn, slices pop in (not when it is redrawn, and not under reduced motion)
  * @param {boolean} [options.interactive=true] line and area charts: false leaves out the pointer layer (tooltip that follows the pointer, zoom)
+ * @param {boolean} [options.gaps=false] line and area charts: a missing value (null, NaN, undefined) breaks the line, and a point on its own is a dot;
+ *        without it the line goes on from the value before to the one after
+ * @param {{from: (number|Date|string), to: (number|Date|string)}} [options.timeRange] line and area charts with `times`: the range of the time axis, when it is not the one
+ *        the data covers (the last hour, of which only the last quarter has been measured)
+ * @param {(value: number) => string} [options.format] how a value is written: on the axis, in the tooltips and in the table of values (default: whole numbers, otherwise two decimals)
+ * @param {(value: number) => string} [options.tickFormat] how the numbers of the value axis are written, when they should not be written like the values (a chart of whole numbers has ticks of 0.2)
+ * @param {{top?: number, right?: number, bottom?: number, left?: number}} [options.margin] room around the plot in px (default 40, 20, 50, 55): a chart without a title and a legend does not need the top
+ * @param {boolean} [options.responsive=false] the chart is as wide as its parent and follows it when it changes (`height` stays); `width` is only the first guess
  * @returns {(SVGElement & {element: SVGElement, update: (options?: object) => SVGElement, destroy: () => void,
  *            zoom: (from: number, to: number) => void, resetZoom: () => void, getZoom: () => ({from: number, to: number}|null),
  *            push: (point: {x?: (number|Date|string), label?: string, values: (number|number[])}, config?: {maxPoints?: number}) => void,
@@ -540,6 +564,7 @@ export function generateChart(options = {}) {
     if (options.labels) state.used.labels = [...options.labels];
     if (options.times) state.used.times = [...options.times];
     const hidden = new Set(options.hiddenSeries ?? []);
+    let resizing = null;
     // Only the first drawing animates (bars grow, the line is drawn, slices pop in): a redraw while streaming or zooming must not start it again
     let firstDrawing = options.animate !== false;
     const hooks = {
@@ -582,6 +607,7 @@ export function generateChart(options = {}) {
             return handle.redraw();
         },
         destroy() {
+            resizing?.disconnect();
             state.current.svg.remove();
             state.current.table?.remove();
         },
@@ -626,13 +652,26 @@ export function generateChart(options = {}) {
         dataTable: { get: () => state.current.table ?? null, configurable: true }
     });
 
+    const host = resolveElement(options.parent ?? "wrapper") ?? document.body;
+    if (options.responsive && host.clientWidth >= 120) state.used.width = Math.floor(host.clientWidth);
     const built = buildChart(state.used, hooks, { animate: firstDrawing });
     firstDrawing = false;
     if (!built) return null;
     state.current = built;
-    const host = resolveElement(options.parent ?? "wrapper") ?? document.body;
     host.append(built.svg);
     if (built.table) built.svg.after(built.table);
+    if (options.responsive && typeof ResizeObserver === "function") {
+        // The chart is as wide as its parent (the height stays): redrawn once per frame when the parent changes its width
+        let frame = 0;
+        resizing = new ResizeObserver(() => {
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(() => {
+                const width = Math.floor(host.clientWidth);
+                if (width >= 120 && width !== state.used.width) handle.update({ width });
+            });
+        });
+        resizing.observe(host);
+    }
     return attach(built.svg);
 }
 
@@ -664,7 +703,10 @@ function buildChart(options = {}, hooks, { animate = false } = {}) {
 
     // The tooltip is created first, so the shapes can use it, and moved to the end afterwards, so it is drawn on top.
     const tooltip = createTooltip(svg, width);
-    const ctx = { labels, series, width, height, times, options, tooltip, hooks, zoom: options.zoomRange ?? null };
+    const margin = { ...DEFAULT_MARGIN, ...(options.margin ?? {}) };
+    const format = typeof options.format === "function" ? options.format : formatNumber;
+    const tickFormat = typeof options.tickFormat === "function" ? options.tickFormat : format;
+    const ctx = { labels, series, width, height, times, options, tooltip, hooks, zoom: options.zoomRange ?? null, margin, format, tickFormat };
     const pieLegend = draw(svg, ctx);
     if (!sparkline && (options.legend ?? (Boolean(pieLegend) || series.length > 1))) {
         addLegend(svg, pieLegend ?? series.map((s, i) => ({ name: s.name ?? `${translate("series")} ${i + 1}`, props: seriesProps(s, i), series: i })), width, height, ctx);
@@ -676,5 +718,5 @@ function buildChart(options = {}, hooks, { animate = false } = {}) {
         entry?.setAttribute("aria-pressed", "false");
         entry?.classList.add("is-off");
     }
-    return { svg, table: options.table ? buildDataTable({ labels, series, times, title, type }) : null };
+    return { svg, table: options.table ? buildDataTable({ labels, series, times, title, type, format }) : null };
 }

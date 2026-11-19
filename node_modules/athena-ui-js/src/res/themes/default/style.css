@@ -2380,6 +2380,10 @@ dialog.dialog[open]::backdrop {
    widget (wg-x-1, wg-y-1, wg-w-3, wg-h-2), written into a constructed style sheet: no style attribute, so a strict Content-Security-Policy is fine.
    The controls of the edit mode (handle, buttons, resize edges) exist in every widget and are shown only in .is-editable. */
 
+.field[hidden] {
+    display: none;
+}
+
 .athena-widget-grid {
     display: grid;
     position: relative;

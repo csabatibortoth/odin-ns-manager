@@ -153,11 +153,12 @@ export function showConfirm({ title, message, confirmText = translate("ok"), can
  * @param {string} [options.cancelText]
  * @param {boolean} [options.danger=false] red submit button
  * @param {"small"|"medium"|"large"|"full"} [options.size]
+ * @param {boolean} [options.nested=false] a field called "soa.host" is `values.soa.host` (see generateForm, which also explains `show`, `label`, `send`, `trim` and `empty` of a field)
  * @param {(values: object, form: object) => (void|Promise)} options.onSubmit
  * @param {(form: object) => void} [options.onReady] called with the form once it is built
  * @returns {Promise<boolean> & {element: HTMLElement, form: object, close: Function}} resolves with true when it was saved, false when dismissed
  */
-export function showFormDialog({ title, intro, content, fields, submitText = translate("save"), cancelText = translate("cancel"), danger = false, size, onSubmit, onReady } = {}) {
+export function showFormDialog({ title, intro, content, fields, submitText = translate("save"), cancelText = translate("cancel"), danger = false, size, nested = false, onSubmit, onReady } = {}) {
     let saved = false;
     let dialog = null;
     const body = el("div", { class: "dialog-form" });
@@ -166,6 +167,7 @@ export function showFormDialog({ title, intro, content, fields, submitText = tra
     const form = generateForm({
         parent: body,
         fields,
+        nested,
         submitText,
         onSubmit: async (values, f) => {
             await onSubmit?.(values, f);
@@ -182,7 +184,8 @@ export function showFormDialog({ title, intro, content, fields, submitText = tra
         form.submitButton.element.classList.add("button-danger");
     }
     dialog = showDialog({ title, content: body, buttons: [], size });
-    const first = form.element.querySelector("input:not([disabled]):not([type=hidden]), select, textarea");
+    // The first control that is there to be used (a field that is not shown, or disabled, is not)
+    const first = [...form.element.querySelectorAll("input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled])")].find(control => !control.closest("[hidden]"));
     first?.focus();
     return Object.assign(dialog.then(() => saved), { element: dialog.element, backdrop: dialog.backdrop, form, close: dialog.close });
 }

@@ -87,8 +87,20 @@ export function generateField(options?: {
  * @param {(values: object, form: object) => (void|Promise)} [options.onSubmit] called with the values when every
  *        field is valid. A returned promise keeps the submit button busy; a rejection is shown as form message.
  * @param {(values: object, field: object) => void} [options.onChange]
- * @returns {{element: HTMLFormElement, fields: Object<string, object>, getValues: Function, setValues: Function,
- *            setErrors: Function, validate: Function, reset: Function, setMessage: Function, submitButton: object}}
+ * @param {boolean} [options.nested=false] a field called "soa.host" is the key `host` of the object `soa` in the values
+ *
+ * Field definitions can also have these, which only generateForm reads:
+ *  - `show: (values) => boolean`: the field is shown while it returns true. A field that is not shown is not validated and not in the values.
+ *  - `label: (values) => string`: a label that follows the other fields (`values` are the raw values of every field)
+ *  - `send: false`: the field is validated but not in the values (the second field of "type the password again")
+ *  - `trim: true`: a text value is trimmed
+ *  - `empty: "omit"|"null"|"empty"`: what an empty value (an empty text, a number that is not a number) becomes: left out, null, or "".
+ *    Without it the value stays as it is.
+ *
+ * A rejection of `onSubmit` with a `details` object ({ "soa.host": "Not a name" }) puts the messages at their fields; what has no field, and the message
+ * of the error when no field shows one, go to the message of the form.
+ * @returns {{element: HTMLFormElement, fields: Object<string, object>, getValues: Function, getRawValues: Function, setValues: Function,
+ *            setErrors: Function, validate: Function, reset: Function, setMessage: Function, arrange: Function, submitButton: object}}
  */
 export function generateForm(options?: {
     parent?: string | Element;
@@ -98,16 +110,19 @@ export function generateForm(options?: {
     resetText?: string | false;
     onSubmit?: (values: object, form: object) => (void | Promise<any>);
     onChange?: (values: object, field: object) => void;
+    nested?: boolean;
 }): {
     element: HTMLFormElement;
     fields: {
         [x: string]: object;
     };
     getValues: Function;
+    getRawValues: Function;
     setValues: Function;
     setErrors: Function;
     validate: Function;
     reset: Function;
     setMessage: Function;
+    arrange: Function;
     submitButton: object;
 };

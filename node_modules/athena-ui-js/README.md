@@ -5,7 +5,7 @@ layout (header, menu, content wrapper, footer) from a single `init()` call, load
 and theme, and ships the building blocks of a multipurpose application: forms, tables, charts,
 feedback, navigation, a router and more.
 
-Current version: **2.4.1**
+Current version: **2.5.0**
 
 [Quick start](#usage) · [API](#api) · [Components](#charts) · [Themes](#themes) · [Tests](#tests) · [Release notes](#releases)
 
@@ -149,7 +149,7 @@ It takes the options of `init()`. The header and footer follow the settings `gen
 | `header_title_text` | `"Athena UI"` | Title in the header |
 | `header_img_url` | | Header logo URL |
 | `copyright` | placeholder text | Footer text, the version is appended |
-| `version` | `"2.4.1"` | Version shown in the footer |
+| `version` | `"2.5.0"` | Version shown in the footer |
 | `bordered` | `true` | Draw a border around the layout blocks |
 | `generateHeader`, `generateFooter` | `true` | Generate the header / footer block |
 | `generateHeadercontent`, `generateFooterContent`, `generateWrappercontent` | `true` | Generate the content of the block |
@@ -862,6 +862,14 @@ tests/                      unit tests (Node) and browser tests (headless Chrome
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
 
 ## Releases
+
+ ### 2.5.0
+  (what the user interface of Odin NS Manager asked for when it moved onto Athena UI 2.x)
+  #### Added:
+   1. Charts: `gaps` (a missing value breaks the line, a lone point is a dot), `timeRange` (the range of the time axis when it is not the one the data covers), `format` (how a value is written on the axis, in the tooltips and in the table of values), `tickFormat` (the axis only), `margin` (room around the plot) and `responsive` (as wide as the parent, following it)
+   2. Tables: the `render` of a column (an element in a cell) is documented, and every cell has `data-label` with the label of its column, so a stylesheet can show a row as a block on a narrow screen
+   3. Forms: a field can have `show: (values) => boolean` (a field that is not shown is not validated and not in the values), `label: (values) => string`, `send: false`, `trim` and `empty: "omit" | "null" | "empty"`; the form has `nested` (a field called `soa.host` is `values.soa.host`), `getRawValues()` and `arrange()`; a rejection of `onSubmit` with `details` ({ field: message }) puts the messages at their fields; `field.setLabel(text)`
+   4. `showFormDialog` focuses the first field that is shown
 
  ### 2.4.1
   #### Fixed:

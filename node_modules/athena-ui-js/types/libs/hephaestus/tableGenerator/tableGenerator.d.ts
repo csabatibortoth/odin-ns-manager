@@ -7,7 +7,10 @@
  * @param {string} [options.id] id of the table wrapper (default: "table")
  * @param {string} [options.class] extra CSS class of the table
  * @param {string} [options.caption]
- * @param {{key: string, label?: string, width?: number, sortable?: boolean, editable?: boolean, format?: (value, row) => string}[]} options.columns
+ * @param {{key: string, label?: string, width?: number, sortable?: boolean, editable?: boolean, align?: "left"|"center"|"right", title?: boolean,
+ *          format?: (value, row) => string, render?: (row: object, value) => (string|Node)}[]} options.columns
+ *        `format` writes the text of a cell; `render` builds its content instead (a badge, a link, buttons: an element, or text). Every cell carries its column
+ *        label in `data-label`, so a stylesheet can show a row as a block on a narrow screen, with the label next to the value.
  * @param {object[]} [options.rows] row objects, read by column key
  * @param {boolean} [options.sortable=true] click on a header sorts by it
  * @param {boolean} [options.filter=false] show a text filter above the table
@@ -60,7 +63,10 @@ export function generateTable(options?: {
         width?: number;
         sortable?: boolean;
         editable?: boolean;
+        align?: "left" | "center" | "right";
+        title?: boolean;
         format?: (value: any, row: any) => string;
+        render?: (row: object, value: any) => (string | Node);
     }[];
     rows?: object[];
     sortable?: boolean;

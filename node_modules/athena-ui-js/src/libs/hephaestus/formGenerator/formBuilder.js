@@ -263,6 +263,10 @@ export function generateField(options = {}) {
         focus() {
             controls[0]?.focus();
         },
+        /** Changes the text of the label (the star of a required field stays). */
+        setLabel(text) {
+            if (caption?.firstChild?.nodeType === Node.TEXT_NODE) caption.firstChild.nodeValue = text;
+        },
         resetState() {
             touched = false;
             field.setError("");
@@ -294,21 +298,79 @@ export function generateField(options = {}) {
  * @param {(values: object, form: object) => (void|Promise)} [options.onSubmit] called with the values when every
  *        field is valid. A returned promise keeps the submit button busy; a rejection is shown as form message.
  * @param {(values: object, field: object) => void} [options.onChange]
- * @returns {{element: HTMLFormElement, fields: Object<string, object>, getValues: Function, setValues: Function,
- *            setErrors: Function, validate: Function, reset: Function, setMessage: Function, submitButton: object}}
+ * @param {boolean} [options.nested=false] a field called "soa.host" is the key `host` of the object `soa` in the values
+ *
+ * Field definitions can also have these, which only generateForm reads:
+ *  - `show: (values) => boolean`: the field is shown while it returns true. A field that is not shown is not validated and not in the values.
+ *  - `label: (values) => string`: a label that follows the other fields (`values` are the raw values of every field)
+ *  - `send: false`: the field is validated but not in the values (the second field of "type the password again")
+ *  - `trim: true`: a text value is trimmed
+ *  - `empty: "omit"|"null"|"empty"`: what an empty value (an empty text, a number that is not a number) becomes: left out, null, or "".
+ *    Without it the value stays as it is.
+ *
+ * A rejection of `onSubmit` with a `details` object ({ "soa.host": "Not a name" }) puts the messages at their fields; what has no field, and the message
+ * of the error when no field shows one, go to the message of the form.
+ * @returns {{element: HTMLFormElement, fields: Object<string, object>, getValues: Function, getRawValues: Function, setValues: Function,
+ *            setErrors: Function, validate: Function, reset: Function, setMessage: Function, arrange: Function, submitButton: object}}
  */
 export function generateForm(options = {}) {
     const element = el("form", { id: options.id, class: cx("athena-form", options.class), attrs: { novalidate: true } });
     const fields = {};
-    const getValues = () => Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.getValue()]));
+    const definitions = {};
+    const shown = {};                // name -> is the field shown (a field without `show` always is)
+    // What every field holds, the way it is (the fields read it for `match`, and `show` and `label` get it)
+    const getRawValues = () => Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.getValue()]));
+
+    // The values of the form: only the fields that are shown and sent, trimmed and emptied as their definitions say, nested when asked
+    const getValues = () => {
+        const values = {};
+        for (const [name, field] of Object.entries(fields)) {
+            const definition = definitions[name];
+            if (shown[name] === false || definition.send === false) continue;
+            let value = field.getValue();
+            if (typeof value === "string" && definition.trim) value = value.trim();
+            if (value === "" || value === undefined || Number.isNaN(value)) {
+                if (definition.empty === "omit") continue;
+                if (definition.empty === "null") value = null;
+                else if (definition.empty === "empty") value = "";
+            }
+            if (!options.nested) {
+                values[name] = value;
+                continue;
+            }
+            const keys = name.split(".");
+            const last = keys.pop();
+            let node = values;
+            for (const key of keys) node = node[key] ??= {};
+            node[last] = value;
+        }
+        return values;
+    };
+
+    // Shows and hides the fields that have `show`, and writes the labels that are functions
+    const arrange = () => {
+        const raw = getRawValues();
+        for (const [name, field] of Object.entries(fields)) {
+            const definition = definitions[name];
+            if (definition.show) {
+                shown[name] = Boolean(definition.show(raw));
+                field.element.hidden = !shown[name];
+            }
+            if (typeof definition.label === "function") field.setLabel(definition.label(raw));
+        }
+    };
 
     for (const definition of options.fields ?? []) {
+        definitions[definition.name] = definition;
+        shown[definition.name] = true;
         const field = generateField({
             ...definition,
+            label: typeof definition.label === "function" ? definition.label({}) : definition.label,
             parent: element,
-            getValues,
+            getValues: getRawValues,
             onChange: (value, source) => {
                 definition.onChange?.(value, source);
+                arrange();
                 options.onChange?.(getValues(), source);
             }
         });
@@ -326,6 +388,8 @@ export function generateForm(options = {}) {
         element,
         fields,
         getValues,
+        getRawValues,
+        arrange,
         submitButton,
         setValues(values) {
             for (const [name, value] of Object.entries(values)) fields[name]?.setValue(value);
@@ -343,6 +407,7 @@ export function generateForm(options = {}) {
         validate() {
             const errors = {};
             for (const [name, field] of Object.entries(fields)) {
+                if (shown[name] === false) continue;
                 const error = field.validate();
                 if (error) errors[name] = error;
             }
@@ -359,7 +424,9 @@ export function generateForm(options = {}) {
     element.addEventListener("reset", () => queueMicrotask(() => {
         Object.values(fields).forEach(field => field.resetState());
         form.setMessage("");
+        arrange();
     }));
+    arrange();
     element.addEventListener("submit", async event => {
         event.preventDefault();
         form.setMessage("");
@@ -368,7 +435,21 @@ export function generateForm(options = {}) {
             submitButton.setLoading(true);
             await options.onSubmit?.(getValues(), form);
         } catch (error) {
-            form.setMessage(error?.message ?? String(error));
+            const details = error?.details && typeof error.details === "object" ? error.details : null;
+            if (!details) form.setMessage(error?.message ?? String(error));
+            else {
+                // The messages at their fields; what has no field, and the error itself when no field shows anything, in the message of the form
+                const rest = [];
+                let marked = false;
+                for (const [name, text] of Object.entries(details)) {
+                    if (fields[name] && shown[name] !== false) {
+                        fields[name].setError(String(text));
+                        marked = true;
+                    } else rest.push(String(text));
+                }
+                const text = [marked && !rest.length ? "" : error.message, ...rest].filter(Boolean).join(": ");
+                form.setMessage(text || translate("form.checkFields"));
+            }
         } finally {
             submitButton.setLoading(false);
         }

@@ -35,6 +35,14 @@ export function decimate(indices: any, values: any, buckets: any): any;
  * @param {number[]} [options.hiddenSeries] the series (or slices) that are hidden at the start; a person hides and shows them with the legend, and a redraw keeps that
  * @param {boolean} [options.animate=true] the first drawing animates: bars grow, a line is drawn, slices pop in (not when it is redrawn, and not under reduced motion)
  * @param {boolean} [options.interactive=true] line and area charts: false leaves out the pointer layer (tooltip that follows the pointer, zoom)
+ * @param {boolean} [options.gaps=false] line and area charts: a missing value (null, NaN, undefined) breaks the line, and a point on its own is a dot;
+ *        without it the line goes on from the value before to the one after
+ * @param {{from: (number|Date|string), to: (number|Date|string)}} [options.timeRange] line and area charts with `times`: the range of the time axis, when it is not the one
+ *        the data covers (the last hour, of which only the last quarter has been measured)
+ * @param {(value: number) => string} [options.format] how a value is written: on the axis, in the tooltips and in the table of values (default: whole numbers, otherwise two decimals)
+ * @param {(value: number) => string} [options.tickFormat] how the numbers of the value axis are written, when they should not be written like the values (a chart of whole numbers has ticks of 0.2)
+ * @param {{top?: number, right?: number, bottom?: number, left?: number}} [options.margin] room around the plot in px (default 40, 20, 50, 55): a chart without a title and a legend does not need the top
+ * @param {boolean} [options.responsive=false] the chart is as wide as its parent and follows it when it changes (`height` stays); `width` is only the first guess
  * @returns {(SVGElement & {element: SVGElement, update: (options?: object) => SVGElement, destroy: () => void,
  *            zoom: (from: number, to: number) => void, resetZoom: () => void, getZoom: () => ({from: number, to: number}|null),
  *            push: (point: {x?: (number|Date|string), label?: string, values: (number|number[])}, config?: {maxPoints?: number}) => void,
@@ -74,6 +82,20 @@ export function generateChart(options?: {
     hiddenSeries?: number[];
     animate?: boolean;
     interactive?: boolean;
+    gaps?: boolean;
+    timeRange?: {
+        from: (number | Date | string);
+        to: (number | Date | string);
+    };
+    format?: (value: number) => string;
+    tickFormat?: (value: number) => string;
+    margin?: {
+        top?: number;
+        right?: number;
+        bottom?: number;
+        left?: number;
+    };
+    responsive?: boolean;
 }): (SVGElement & {
     element: SVGElement;
     update: (options?: object) => SVGElement;

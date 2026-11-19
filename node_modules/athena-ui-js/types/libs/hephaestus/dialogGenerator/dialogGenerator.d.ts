@@ -80,11 +80,12 @@ export function showConfirm({ title, message, confirmText, cancelText, danger, t
  * @param {string} [options.cancelText]
  * @param {boolean} [options.danger=false] red submit button
  * @param {"small"|"medium"|"large"|"full"} [options.size]
+ * @param {boolean} [options.nested=false] a field called "soa.host" is `values.soa.host` (see generateForm, which also explains `show`, `label`, `send`, `trim` and `empty` of a field)
  * @param {(values: object, form: object) => (void|Promise)} options.onSubmit
  * @param {(form: object) => void} [options.onReady] called with the form once it is built
  * @returns {Promise<boolean> & {element: HTMLElement, form: object, close: Function}} resolves with true when it was saved, false when dismissed
  */
-export function showFormDialog({ title, intro, content, fields, submitText, cancelText, danger, size, onSubmit, onReady }?: {
+export function showFormDialog({ title, intro, content, fields, submitText, cancelText, danger, size, nested, onSubmit, onReady }?: {
     title?: string;
     intro?: string;
     content?: string | Node | any[];
@@ -93,6 +94,7 @@ export function showFormDialog({ title, intro, content, fields, submitText, canc
     cancelText?: string;
     danger?: boolean;
     size?: "small" | "medium" | "large" | "full";
+    nested?: boolean;
     onSubmit: (values: object, form: object) => (void | Promise<any>);
     onReady?: (form: object) => void;
 }): Promise<boolean> & {

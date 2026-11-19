@@ -24,11 +24,13 @@ export function generateSignInForm(options?: {
         [x: string]: any;
     };
     getValues: Function;
+    getRawValues: Function;
     setValues: Function;
     setErrors: Function;
     validate: Function;
     reset: Function;
     setMessage: Function;
+    arrange: Function;
     submitButton: object;
 };
 /**
@@ -58,11 +60,13 @@ export function generateSignUpForm(options?: {
         [x: string]: any;
     };
     getValues: Function;
+    getRawValues: Function;
     setValues: Function;
     setErrors: Function;
     validate: Function;
     reset: Function;
     setMessage: Function;
+    arrange: Function;
     submitButton: object;
 };
 /**
@@ -83,11 +87,13 @@ export function generatePasswordResetForm(options?: {
         [x: string]: any;
     };
     getValues: Function;
+    getRawValues: Function;
     setValues: Function;
     setErrors: Function;
     validate: Function;
     reset: Function;
     setMessage: Function;
+    arrange: Function;
     submitButton: object;
 };
 /**
@@ -113,10 +119,12 @@ export function generatePasswordChangeForm(options?: {
         [x: string]: any;
     };
     getValues: Function;
+    getRawValues: Function;
     setValues: Function;
     setErrors: Function;
     validate: Function;
     reset: Function;
     setMessage: Function;
+    arrange: Function;
     submitButton: object;
 };
