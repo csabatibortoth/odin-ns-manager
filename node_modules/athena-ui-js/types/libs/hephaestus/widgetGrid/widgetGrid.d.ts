@@ -21,7 +21,8 @@
  * @property {HTMLElement} element the body of the widget: build into it
  * @property {object} config the current config (read it again in update())
  * @property {string} title
- * @property {{width: number, height: number}} size
+ * @property {{width: number, height: number}} size the box of the body, as it is now
+ * @property {{width: number, height: number}} contentSize what is left inside the padding of the body: the room a chart or a table has
  * @property {(title: string) => void} setTitle
  */
 export function registerWidget(type: string, definition: {
@@ -72,8 +73,9 @@ export function getWidgetTypes(): any[];
  * @param {boolean} [options.animate=true] widgets slide to their new places (never under reduced motion)
  * @param {string} [options.label] accessible name of the dashboard
  * @param {number} [options.maxWidgets=200]
+ * @param {number} [options.changeDelay=0] ms to wait after a change before onChange is called (a drag is many steps: one call after the last); 0 calls it at once. `flush()` calls it now
  * @param {(layout: object, reason: string) => void} [options.onChange] called after a change made by the person or by add/remove/...: "move", "resize", "add", "remove", "duplicate", "settings", "lock", "undo", "redo"
- * @returns the handle: { element, addWidget, removeWidget, duplicateWidget, configureWidget, updateWidget, getWidget, getWidgets, lockWidget, setEditable, isEditable,
+ * @returns the handle: { element, addWidget, addWidgetWithSettings, flush, removeWidget, duplicateWidget, configureWidget, updateWidget, getWidget, getWidgets, lockWidget, setEditable, isEditable,
  *          getLayout, setLayout, undo, redo, canUndo, canRedo, getBreakpoint, destroy }
  */
 export function createWidgetGrid(options?: {
@@ -92,6 +94,7 @@ export function createWidgetGrid(options?: {
     animate?: boolean;
     label?: string;
     maxWidgets?: number;
+    changeDelay?: number;
     onChange?: (layout: object, reason: string) => void;
 }): any;
 /**
@@ -109,7 +112,17 @@ export type WidgetContext = {
      */
     config: object;
     title: string;
+    /**
+     * the box of the body, as it is now
+     */
     size: {
+        width: number;
+        height: number;
+    };
+    /**
+     * what is left inside the padding of the body: the room a chart or a table has
+     */
+    contentSize: {
         width: number;
         height: number;
     };

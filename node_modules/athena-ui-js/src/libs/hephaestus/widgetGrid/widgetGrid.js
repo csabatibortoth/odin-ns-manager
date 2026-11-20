@@ -36,7 +36,8 @@ const registry = new Map();
  * @property {HTMLElement} element the body of the widget: build into it
  * @property {object} config the current config (read it again in update())
  * @property {string} title
- * @property {{width: number, height: number}} size
+ * @property {{width: number, height: number}} size the box of the body, as it is now
+ * @property {{width: number, height: number}} contentSize what is left inside the padding of the body: the room a chart or a table has
  * @property {(title: string) => void} setTitle
  */
 export function registerWidget(type, definition) {
@@ -132,8 +133,9 @@ const LAYOUT_VERSION = 1;
  * @param {boolean} [options.animate=true] widgets slide to their new places (never under reduced motion)
  * @param {string} [options.label] accessible name of the dashboard
  * @param {number} [options.maxWidgets=200]
+ * @param {number} [options.changeDelay=0] ms to wait after a change before onChange is called (a drag is many steps: one call after the last); 0 calls it at once. `flush()` calls it now
  * @param {(layout: object, reason: string) => void} [options.onChange] called after a change made by the person or by add/remove/...: "move", "resize", "add", "remove", "duplicate", "settings", "lock", "undo", "redo"
- * @returns the handle: { element, addWidget, removeWidget, duplicateWidget, configureWidget, updateWidget, getWidget, getWidgets, lockWidget, setEditable, isEditable,
+ * @returns the handle: { element, addWidget, addWidgetWithSettings, flush, removeWidget, duplicateWidget, configureWidget, updateWidget, getWidget, getWidgets, lockWidget, setEditable, isEditable,
  *          getLayout, setLayout, undo, redo, canUndo, canRedo, getBreakpoint, destroy }
  */
 export function createWidgetGrid(options = {}) {
@@ -186,7 +188,11 @@ export function createWidgetGrid(options = {}) {
                 continue;
             }
             const widget = widgets.get(node.closest(".widget")?.dataset.widgetId);
-            if (widget) later(widget, "resizeTimer", () => widget.rendered && widget.def?.resize?.(widget.context, widget.context.size), 100);
+            if (widget) later(widget, "resizeTimer", () => {
+                if (!widget.rendered) return;
+                measure(widget);       // the size the widget is asked about is the one it has now
+                widget.def?.resize?.(widget.context, widget.context.size);
+            }, 100);
         }
     }) : null;
 
@@ -310,6 +316,7 @@ export function createWidgetGrid(options = {}) {
             get config() { return widget.config; },
             get title() { return widget.title; },
             size: { width: 0, height: 0 },
+            contentSize: { width: 0, height: 0 },
             setTitle: text => setTitle(widget, text)
         };
         labelNode(widget);
@@ -346,14 +353,26 @@ export function createWidgetGrid(options = {}) {
         else if (widget.dirty) updateNow(widget);
     }
 
+    /** Sets context.size (the box of the body) and context.contentSize (inside its padding). */
+    function measure(widget) {
+        const body = widget.parts.body;
+        const rect = body.getBoundingClientRect();
+        widget.context.size = { width: Math.round(rect.width), height: Math.round(rect.height) };
+        const style = body.ownerDocument.defaultView?.getComputedStyle?.(body);
+        const pad = name => Number.parseFloat(style?.[name]) || 0;
+        widget.context.contentSize = {
+            width: Math.max(0, widget.context.size.width - pad("paddingLeft") - pad("paddingRight")),
+            height: Math.max(0, widget.context.size.height - pad("paddingTop") - pad("paddingBottom"))
+        };
+    }
+
     function renderWidget(widget) {
         widget.rendered = true;
         widget.dirty = false;
         widget.def = registry.get(widget.type);
         widget.parts.body.replaceChildren();
         widget.node.classList.remove("is-unknown", "is-failed");
-        const rect = widget.parts.body.getBoundingClientRect();
-        widget.context.size = { width: Math.round(rect.width), height: Math.round(rect.height) };
+        measure(widget);
         if (!widget.def) {
             widget.node.classList.add("is-unknown");
             widget.parts.body.append(el("p", { class: "widget-note", text: translate("widget.unknown", { type: widget.type }) }));
@@ -382,8 +401,7 @@ export function createWidgetGrid(options = {}) {
 
     function updateNow(widget) {
         widget.dirty = false;
-        const size = widget.parts.body.getBoundingClientRect();
-        widget.context.size = { width: Math.round(size.width), height: Math.round(size.height) };
+        measure(widget);
         const update = widget.instance?.update ?? widget.def?.update;
         if (!update) {
             disposeWidget(widget);
@@ -421,14 +439,16 @@ export function createWidgetGrid(options = {}) {
     /* ---- layout JSON ---- */
 
     /** The layout as plain, versioned JSON: where it is stored is up to the application. */
-    function getLayout() {
+    function getLayout({ breakpoint: only } = {}) {
         const items = itemsOf(breakpoint);
         const order = new Map(items.sort((a, b) => a.y - b.y || a.x - b.x).map((item, index) => [item.id, index]));
         return {
             version: LAYOUT_VERSION,
             widgets: [...widgets.values()].sort((a, b) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9)).map(widget => ({
                 id: widget.id, type: widget.type, title: widget.title, config: plain(widget.config), locked: widget.locked,
-                layouts: Object.fromEntries(Object.entries(widget.places).map(([name, place]) => [name, { ...place }]))
+                layouts: Object.fromEntries(Object.entries(widget.places).map(([name, place]) => [name, { ...place }])),
+                // for an application that keeps ONE layout: the place of the widget in that breakpoint, flat (x, y, w, h)
+                ...(only && widget.places[only] ? { x: widget.places[only].x, y: widget.places[only].y, w: widget.places[only].w, h: widget.places[only].h } : {})
             }))
         };
     }
@@ -525,7 +545,28 @@ export function createWidgetGrid(options = {}) {
         snapshots.push(snapshot);
         if (snapshots.length > 100) snapshots.shift();
         position = snapshots.length - 1;
-        if (!starting) options.onChange?.(getLayout(), reason);
+        if (!starting) notify(reason);
+    }
+
+    // onChange is called at once, or, with the option `changeDelay`, a moment after the last change (a drag is many steps): then it is told the reason of the last one.
+    let changeTimer = 0;
+    let pendingReason = null;
+    function notify(reason) {
+        if (!(options.changeDelay > 0)) {
+            options.onChange?.(getLayout(), reason);
+            return;
+        }
+        pendingReason = reason;
+        clearTimeout(changeTimer);
+        changeTimer = setTimeout(flush, options.changeDelay);
+    }
+    /** Calls onChange now when a change is waiting for its delay (leaving the page, a button "save"). */
+    function flush() {
+        clearTimeout(changeTimer);
+        if (pendingReason === null) return;
+        const reason = pendingReason;
+        pendingReason = null;
+        if (!destroyed) options.onChange?.(getLayout(), reason);
     }
 
     function travel(step, reason) {
@@ -539,7 +580,8 @@ export function createWidgetGrid(options = {}) {
 
     /* ---- add, remove, change ---- */
 
-    function addWidget(type, { id, title, config, x, y, w, h, locked } = {}) {
+    // Puts a new widget in the grid without telling anybody (no undo step, no onChange): addWidget and addWidgetWithSettings are the two ways to finish it.
+    function place(type, { id, title, config, x, y, w, h, locked } = {}) {
         const def = registry.get(type);
         if (!def) throw new TypeError(`Athena UI: the widget type "${type}" is not registered`);
         if (widgets.size >= maxWidgets) throw new RangeError(`Athena UI: a grid holds at most ${maxWidgets} widgets`);
@@ -555,9 +597,39 @@ export function createWidgetGrid(options = {}) {
         for (const bp of breakpoints) if (bp !== breakpoint && itemsOf(bp).length) ensurePlaces(bp);
         applyPlaces();
         orderDom();
-        commit("add");
-        announce(translate("widget.added", { title: widget.title }));
         return widgetId;
+    }
+
+    function addWidget(type, options = {}) {
+        const widgetId = place(type, options);
+        commit("add");
+        announce(translate("widget.added", { title: widgets.get(widgetId).title }));
+        return widgetId;
+    }
+
+    /**
+     * Adds a widget and opens its settings at once. A person who gives up leaves the grid as it was: nothing is added, there is no undo step and onChange is not called. A person who saves
+     * has added a widget: one undo step ("add") and one call of onChange.
+     * @returns {Promise<string|null>} the id of the widget, or null when the settings were dismissed
+     */
+    async function addWidgetWithSettings(type, options = {}) {
+        const widgetId = place(type, options);
+        const saved = await configureWidget(widgetId, { reason: "add" });
+        if (destroyed) return null;
+        if (saved) {
+            announce(translate("widget.added", { title: widgets.get(widgetId)?.title ?? "" }));
+            return widgetId;
+        }
+        const widget = widgets.get(widgetId);
+        if (widget) {
+            removeNode(widget);
+            for (const bp of breakpoints) {
+                const items = itemsOf(bp);
+                if (items.length && compactItems) store(bp, compact(items));
+            }
+            applyPlaces();
+        }
+        return null;
     }
 
     function removeWidget(id) {
@@ -601,7 +673,7 @@ export function createWidgetGrid(options = {}) {
         return true;
     }
 
-    function configureWidget(id) {
+    function configureWidget(id, { reason = "settings" } = {}) {
         const widget = widgets.get(id);
         if (!widget) return null;
         const form = typeof widget.def?.configForm === "function" ? widget.def.configForm(widget) : (widget.def?.configForm ?? []);
@@ -616,7 +688,7 @@ export function createWidgetGrid(options = {}) {
                 setTitle(widget, widgetTitle || widget.title);
                 widget.config = plain({ ...widget.config, ...config });
                 markChanged(widget);
-                commit("settings");
+                commit(reason);
             }
         });
     }
@@ -841,7 +913,7 @@ export function createWidgetGrid(options = {}) {
 
     return asHandle({
         element,
-        addWidget, removeWidget, duplicateWidget, configureWidget, updateWidget, lockWidget,
+        addWidget, addWidgetWithSettings, removeWidget, duplicateWidget, configureWidget, updateWidget, lockWidget, flush,
         getWidget: id => (widgets.has(id) ? { id, type: widgets.get(id).type, title: widgets.get(id).title, config: plain(widgets.get(id).config), locked: widgets.get(id).locked, element: widgets.get(id).node } : null),
         getWidgets: () => [...widgets.keys()],
         setEditable, isEditable: () => editable,
@@ -851,6 +923,7 @@ export function createWidgetGrid(options = {}) {
         getBreakpoint: () => breakpoint.name,
         destroy() {
             if (destroyed) return;
+            flush();             // a change that waits for its delay is delivered, not lost
             destroyed = true;
             cancelGesture();
             for (const timer of timers) clearTimeout(timer);

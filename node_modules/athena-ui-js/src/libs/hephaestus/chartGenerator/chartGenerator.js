@@ -12,6 +12,8 @@ import { getLocale, translate } from "../../core/i18n.js";
 const NS = "http://www.w3.org/2000/svg";
 const SERIES_COLORS = 8;
 const DEFAULT_MARGIN = { top: 40, right: 20, bottom: 50, left: 55 };
+// The legend stands under the time labels: with less than this at the bottom they overlap (a smaller margin the application asked for is raised)
+const LEGEND_BOTTOM = 48;
 const DOT_LIMIT = 80;       // up to this many points in view every point is a dot with a tooltip; more: the tooltip follows the pointer
 
 const svgEl = (tag, attrs = {}, text) => {
@@ -597,7 +599,7 @@ function buildDataTable({ labels, series, times, title, type, format = formatNum
  *        time in milliseconds, or the options of Intl.DateTimeFormat (default: `{ dateStyle: "medium", timeStyle: "medium" }`, for example "Nov 19, 2026, 6:15:09 PM")
  * @param {boolean} [options.points=true] line and area charts: false never draws the dots, however few the points are (the tooltip still follows the pointer and the keyboard)
  * @param {(value: number) => string} [options.tickFormat] how the numbers of the value axis are written, when they should not be written like the values (a chart of whole numbers has ticks of 0.2)
- * @param {{top?: number, right?: number, bottom?: number, left?: number}} [options.margin] room around the plot in px (default 40, 20, 50, 55): a chart without a title and a legend does not need the top
+ * @param {{top?: number, right?: number, bottom?: number, left?: number}} [options.margin] room around the plot in px (default 40, 20, 50, 55; with a legend the bottom is at least 48): a chart without a title and a legend does not need the top
  * @param {boolean} [options.responsive=false] the chart is as wide as its parent and follows it when it changes (`height` stays); `width` is only the first guess
  * @returns {(SVGElement & {element: SVGElement, update: (options?: object) => SVGElement, destroy: () => void,
  *            zoom: (from: number, to: number) => void, resetZoom: () => void, getZoom: () => ({from: number, to: number}|null),
@@ -753,6 +755,7 @@ function buildChart(options = {}, hooks, { animate = false } = {}) {
     // The tooltip is created first, so the shapes can use it, and moved to the end afterwards, so it is drawn on top.
     const tooltip = createTooltip(svg, width);
     const margin = { ...DEFAULT_MARGIN, ...(options.margin ?? {}) };
+    if (!sparkline && type !== "pie" && type !== "donut" && (options.legend ?? series.length > 1)) margin.bottom = Math.max(margin.bottom, LEGEND_BOTTOM);
     const format = typeof options.format === "function" ? options.format : formatNumber;
     const tickFormat = typeof options.tickFormat === "function" ? options.tickFormat : format;
     const formatTime = makeTimeFormatter(options.timeFormat);
