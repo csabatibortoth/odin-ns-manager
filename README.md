@@ -528,7 +528,7 @@ for the details.
 
 The user interface is served by the HTTP(S) server of the management API, at
 `http://localhost:45451` by default, and works with the same accounts. It is
-built on [Athena UI](https://github.com/csabatibortoth/athena-ui) (2.4) and jQuery,
+built on [Athena UI](https://github.com/csabatibortoth/athena-ui) (2.6) and jQuery,
 which are served from their packages: the page loads nothing from other servers.
 Athena UI itself has no jQuery since 2.0; the manager's own pages and the plugin API (`$page`) still use it.
 The pages are made of the components of Athena UI: its menu with submenus,
@@ -547,6 +547,10 @@ signed-in user, their name:
 
 On a phone the rows of the tables are shown as blocks, so nothing has to be
 scrolled sideways.
+
+Notices (a saved zone, a failure) appear at the bottom right of the window, above the tabs on a phone, so they never cover the buttons
+at the top of a page. The graphs of the dashboard can be read with the keyboard: Tab to the graph, then the arrow keys move from value to value
+(Home and End go to the first and the last, Esc hides the value).
 
 | | | |
 | --- | --- | --- |
@@ -735,6 +739,24 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.8.0
+
+#### Changed
+
+- **The user interface is built on Athena UI 2.6.** The workarounds that the manager had written around the missing parts of Athena UI are gone
+  (about 40 lines of script and 80 of the stylesheet): the menu switches between the bar and the tabs by the option `breakpoint` (1000 pixels, as
+  before) instead of its own listener and a rebuild, the tables of a phone are drawn by the option `stack` of Athena UI, and the label of the
+  value field of a record no longer has to answer for the empty form.
+- **Notices are at the bottom right** (above the tabs on a phone). At the top right they covered the buttons of a page, like Add zone, for
+  six seconds after every save.
+- **The graphs of the dashboard have no dots** on their lines, so a window that is half filled looks like a full one, the time in the table of values
+  is short ("Nov 20, 11:17:57 AM") and the graphs can be read with the keyboard: the arrow keys move from value to value, Home and End go to the first
+  and the last, Esc hides the value. A value that stands alone between two gaps has a tooltip of its own.
+
+#### Upgrading from 2.7.0
+
+- Update and restart; nothing has to be changed. Reload the page in the browser once (Ctrl+F5) so it does not keep the old stylesheet.
 
 ### 2.7.0
 
