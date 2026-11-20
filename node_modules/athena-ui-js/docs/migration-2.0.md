@@ -74,6 +74,22 @@ They are part of Athena UI (`athena-ui-js/controls`) and no longer git submodule
 - The browser tests run under a strict Content-Security-Policy (no inline script, no inline style) and fail on any violation: the library does not need `'unsafe-inline'`.
 - `init()` and `createApp({ root })`: `createApp` builds the layout into an element of your page instead of the body.
 
+## 8. What Odin NS Manager needed when it moved (a real application, 2.x)
+
+Odin moved with little work, and then replaced its own copies of the theme manager, the header menu, forms, tables and charts. What it found:
+
+- **`HTMLControlGenerator` and `HTMLElementGenerator` are in Athena** (`athena-ui-js/controls`, `src/libs/core/elementGenerator.js`); you do not need the old packages. They are plain functions now, without jQuery: if your code
+  wrapped their result in jQuery, wrap it where you use it (`$(HTMLControlGenerator.create(...))`).
+- **Dialogs are native `<dialog>` elements.** A selector such as `.dialog-backdrop .dialog` or `.modal-content` finds nothing; use `showDialog(...).element` or the `class` option. The close button has the class `dialog-close`.
+- **Form parts** have classes of their own: `.form-message` (the line under the fields, `.form-message-error` / `-success`) and `.form-actions` (the buttons). Rules that styled your own copies of these can go.
+- **Delete from your stylesheet**: rules that beat Athena's specificity (it is in the layer `athena` now, a plain rule wins), your copy of the theme variables (use `createThemeManager` and the tokens), the menu repair
+  (icons, active item, keyboard are in `generateMenu`), and the table CSS for a narrow screen (`stack: true`).
+- **Order that worked**: the theme manager first (a drop-in), then the menu, then the pieces where Athena lacked something (forms, tables, charts): define what is missing in the application, build it in the library with
+  tests, install the packed tarball into the application with `npm install --no-save <file>.tgz`, and only when the library is published change the dependency.
+- **Check with the real application**: run it with a throwaway database, take screenshots of every page before and after, and drive the flows with real input. Not everything has to move: Odin keeps its own
+  `el()` wrapper, its API client and its list loader.
+- **Smaller downloads**: import from the entry points (`athena-ui-js/table`, ...) and start with `athena-ui-js/app` instead of the root file, which loads every module.
+
 ## Upgrade in five steps
 
 1. Replace `import AthenaUI from ...` and `window.` calls by named imports, or add the `classic.js` line.

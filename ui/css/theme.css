@@ -181,33 +181,33 @@ body:not(.signed-in) #header_tools {
     display: flex;
 }
 
-.athena-menu-bar {
+.athena-menu-responsive:not(.is-tabs) {
     display: flex;
     flex: 1;
     min-width: 0;
 }
 
-.athena-menu-bar .athena-menu-list {
+.athena-menu-responsive:not(.is-tabs) .athena-menu-list {
     flex: 1;
     flex-wrap: nowrap;
     align-items: stretch;
     gap: 2px;
 }
 
-.athena-menu-bar .menu-item {
+.athena-menu-responsive:not(.is-tabs) .menu-item {
     display: flex;
     align-items: stretch;
 }
 
-.athena-menu-bar > .athena-menu-list > .menu-item > .menu-control {
+.athena-menu-responsive:not(.is-tabs) > .athena-menu-list > .menu-item > .menu-control {
     padding: 3px 14px 0;
     border-radius: 0;
     color: inherit;
     white-space: nowrap;
 }
 
-.athena-menu-bar > .athena-menu-list > .menu-item > .menu-control:hover,
-.athena-menu-bar > .athena-menu-list > .menu-item > .menu-control[aria-expanded="true"] {
+.athena-menu-responsive:not(.is-tabs) > .athena-menu-list > .menu-item > .menu-control:hover,
+.athena-menu-responsive:not(.is-tabs) > .athena-menu-list > .menu-item > .menu-control[aria-expanded="true"] {
     background: rgb(255 255 255 / 14%);
 }
 
@@ -324,7 +324,7 @@ body:not(.signed-in) #header_tools {
     }
 
     /* The bar of tabs at the bottom of the screen, and the sheet of a group above it */
-    .athena-menu-bottom-tabs {
+    .athena-menu-responsive.is-tabs {
         z-index: 70;
         height: calc(var(--bar-h) + env(safe-area-inset-bottom));
         padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
@@ -334,17 +334,17 @@ body:not(.signed-in) #header_tools {
         box-shadow: 0 -2px 12px rgb(0 0 0 / 22%);
     }
 
-    .athena-menu-bottom-tabs .athena-menu-list {
+    .athena-menu-responsive.is-tabs .athena-menu-list {
         height: 100%;
         align-items: stretch;
     }
 
-    .athena-menu-bottom-tabs .menu-item {
+    .athena-menu-responsive.is-tabs .menu-item {
         display: flex;
         min-width: 0;
     }
 
-    .athena-menu-bottom-tabs .menu-control {
+    .athena-menu-responsive.is-tabs .menu-control {
         justify-content: center;
         border-radius: 0;
         border-top: 3px solid transparent;
@@ -354,23 +354,23 @@ body:not(.signed-in) #header_tools {
         text-decoration: none;
     }
 
-    .athena-menu-bottom-tabs .menu-control.is-active,
-    .athena-menu-bottom-tabs .has-active > .menu-control {
+    .athena-menu-responsive.is-tabs .menu-control.is-active,
+    .athena-menu-responsive.is-tabs .has-active > .menu-control {
         box-shadow: none;
         border-top-color: var(--header-accent);
     }
 
-    .athena-menu-bottom-tabs .menu-label {
+    .athena-menu-responsive.is-tabs .menu-label {
         max-width: 100%;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
-    .athena-menu-bottom-tabs .menu-caret {
+    .athena-menu-responsive.is-tabs .menu-caret {
         display: none;
     }
 
-    .athena-menu-bottom-tabs .menu-sheet {
+    .athena-menu-responsive.is-tabs .menu-sheet {
         z-index: 1;
         inset: auto 0 calc(var(--bar-h) + env(safe-area-inset-bottom));
         max-width: 600px;
@@ -385,7 +385,7 @@ body:not(.signed-in) #header_tools {
     }
 
     /* The name of the group above its pages, and entries that are large enough for a finger */
-    .athena-menu-bottom-tabs .menu-sheet::before {
+    .athena-menu-responsive.is-tabs .menu-sheet::before {
         content: attr(aria-label);
         display: block;
         padding: 8px 12px 6px;
@@ -396,7 +396,7 @@ body:not(.signed-in) #header_tools {
         text-transform: uppercase;
     }
 
-    .athena-menu-bottom-tabs .menu-sheet .menu-control {
+    .athena-menu-responsive.is-tabs .menu-sheet .menu-control {
         flex-direction: row;
         justify-content: flex-start;
         min-height: 48px;
@@ -406,12 +406,12 @@ body:not(.signed-in) #header_tools {
         text-align: left;
     }
 
-    .athena-menu-bottom-tabs .menu-sheet .menu-control.is-active {
+    .athena-menu-responsive.is-tabs .menu-sheet .menu-control.is-active {
         box-shadow: inset 3px 0 0 var(--accent);
     }
 
     /* The page behind the sheet is dimmed. It lies under the header (60), which holds the sheet: the sheet must stay above it. */
-    body:has(.athena-menu-bottom-tabs .menu-sheet:not([hidden]))::after {
+    body:has(.athena-menu-responsive.is-tabs .menu-sheet:not([hidden]))::after {
         content: "";
         position: fixed;
         z-index: 55;
@@ -423,13 +423,14 @@ body:not(.signed-in) #header_tools {
         padding-bottom: calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px);
     }
 
+    /* The toasts stand above the tabs */
     .toast-container {
-        top: calc(var(--header-h) + 8px);
+        --athena-toast-y: calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px);
     }
 }
 
 @media (min-width: 640px) and (max-width: 999px) {
-    .athena-menu-bottom-tabs .menu-control {
+    .athena-menu-responsive.is-tabs .menu-control {
         font-size: 0.8rem;
     }
 
@@ -449,7 +450,7 @@ body:not(.signed-in) #header_tools {
 /* Toasts and dialogs of Athena UI: the notices and the questions */
 
 .toast-container {
-    top: calc(var(--header-h) + 12px);
+    --athena-toast-y: 16px;
     width: min(380px, calc(100vw - 32px));
 }
 
@@ -1383,69 +1384,24 @@ input[type="file"].input {
         max-width: none;
     }
 
-    /* Tables: a row becomes a block, with the title of the column next to every
-       value, so nothing has to be scrolled sideways. The data tables of the
-       graphs are narrow, and stay tables. */
-    .table-scroll:not(.chart-data .table-scroll) {
-        overflow-x: visible;
-    }
-
-    .grid:not(.chart-data .grid),
-    .settings-group .grid {
-        display: block;
-        min-width: 0;
-    }
-
-    .grid:not(.chart-data .grid) thead {
-        display: none;
-    }
-
-    .grid:not(.chart-data .grid) tbody,
-    .grid:not(.chart-data .grid) tr {
-        display: block;
-    }
-
-    .grid:not(.chart-data .grid) tr {
-        padding: 8px 12px;
-        border-bottom: 1px solid var(--border);
-    }
-
-    .grid:not(.chart-data .grid) tr:last-child {
-        border-bottom: 0;
-    }
-
-    .grid:not(.chart-data .grid) td {
-        display: flex;
-        gap: 12px;
-        justify-content: space-between;
-        max-width: none;
+    /* Tables: the option stack of Athena UI shows a row as a block (class is-stacked on the table). The cell with the buttons is Odin's own. */
+    /* Odin's own cell rules (padding, border) are not in a layer and beat the ones of Athena: the cell of a block has none */
+    .is-stacked .grid td {
         padding: 3px 0;
         border: 0;
-        text-align: right;
-        overflow-wrap: anywhere;
     }
 
-    .grid:not(.chart-data .grid) td > .cell {
+    .is-stacked .grid td > .cell {
         min-width: 0;
     }
 
-    .grid:not(.chart-data .grid) td[data-label]::before {
-        content: attr(data-label);
-        flex: none;
-        max-width: 45%;
-        color: var(--muted);
-        font-family: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        font-size: 0.8rem;
-        text-align: left;
-    }
-
-    .grid:not(.chart-data .grid) td.actions {
+    .is-stacked td.actions {
         justify-content: flex-end;
         padding-top: 8px;
         white-space: normal;
     }
 
-    .grid td.actions > .cell {
+    .is-stacked td.actions > .cell {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
@@ -1453,11 +1409,11 @@ input[type="file"].input {
         gap: 6px;
     }
 
-    .grid td.actions > .cell:empty {
+    .is-stacked td.actions > .cell:empty {
         display: none;
     }
 
-    .grid td.actions .button {
+    .is-stacked td.actions .button {
         margin-left: 0;
         padding: 6px 12px;
     }

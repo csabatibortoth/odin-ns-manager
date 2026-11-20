@@ -90,8 +90,6 @@ function currentPath() {
 
 ///--- Menu
 
-// A bar in the header on a wide screen (1000 pixels and more), tabs at the bottom of the screen below that
-const wideScreen = window.matchMedia('(min-width: 1000px)');
 let menu = null;
 
 // A page of the menu is a link; an action (sign out, the API docs) is a button
@@ -126,7 +124,9 @@ function buildMenu() {
         menu = generateHeaderMenu({
             items: menuModel(),
             label: 'Menu',
-            layout: wideScreen.matches ? 'bar' : 'bottom-tabs',
+            // A bar in the header on a wide screen (1000 pixels and more), tabs at the bottom of the screen below that
+            layout: 'responsive',
+            breakpoint: 999,
             followHash: true,
             // A page opens by its link (the router listens to the address); an action is run
             onNavigate: (entry) => menuList().find((candidate) => itemId(candidate) === entry.id)?.action?.(),
@@ -135,8 +135,6 @@ function buildMenu() {
     document.body.classList.toggle('signed-in', Boolean(session.user));
     showFooter();
 }
-
-wideScreen.addEventListener('change', buildMenu);
 
 ///--- Look: the theme and the mode, chosen in the menu at the right of the header
 
