@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.7.0** - see the [release notes](#release-notes).
+Current version: **2.8.0** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
