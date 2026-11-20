@@ -45,7 +45,7 @@ export function decimate(indices: any, values: any, buckets: any): any;
  *        time in milliseconds, or the options of Intl.DateTimeFormat (default: `{ dateStyle: "medium", timeStyle: "medium" }`, for example "Nov 19, 2026, 6:15:09 PM")
  * @param {boolean} [options.points=true] line and area charts: false never draws the dots, however few the points are (the tooltip still follows the pointer and the keyboard)
  * @param {(value: number) => string} [options.tickFormat] how the numbers of the value axis are written, when they should not be written like the values (a chart of whole numbers has ticks of 0.2)
- * @param {{top?: number, right?: number, bottom?: number, left?: number}} [options.margin] room around the plot in px (default 40, 20, 50, 55): a chart without a title and a legend does not need the top
+ * @param {{top?: number, right?: number, bottom?: number, left?: number}} [options.margin] room around the plot in px (default 40, 20, 50, 55; with a legend the bottom is at least 48): a chart without a title and a legend does not need the top
  * @param {boolean} [options.responsive=false] the chart is as wide as its parent and follows it when it changes (`height` stays); `width` is only the first guess
  * @returns {(SVGElement & {element: SVGElement, update: (options?: object) => SVGElement, destroy: () => void,
  *            zoom: (from: number, to: number) => void, resetZoom: () => void, getZoom: () => ({from: number, to: number}|null),

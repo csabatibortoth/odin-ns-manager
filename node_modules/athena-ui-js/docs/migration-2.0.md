@@ -90,6 +90,23 @@ Odin moved with little work, and then replaced its own copies of the theme manag
   `el()` wrapper, its API client and its list loader.
 - **Smaller downloads**: import from the entry points (`athena-ui-js/table`, ...) and start with `athena-ui-js/app` instead of the root file, which loads every module.
 
+## 9. What Heimdall needed when it moved (a second real application, 2.6 to 2.7)
+
+Heimdall replaced its chart library (uPlot), its log filter, its custom views and its own dialogs, forms and tables with Athena. What it found:
+
+- **Generic class names collide.** Athena styles plain class names such as `.facts`, `.fact`, `.widget`, `.widget-body`, `.widget-header`, `.widget-title`, `.stat`, `.toast`, `.dialog`, `.empty-state`, `.loading-state`, `.page-header`,
+  `.page-title`, `.page-actions`, `.card`, `.badge`, `.alert`, `.tab`, `.field`, `.field-label`, `.menu`, `.dropdown`, `.sidebar`, `.chip`, `.stepper`, `.avatar`, `.spinner`, `.pagination`, `.choice`, `.switch`, `.combobox`,
+  `.chart-legend`, `.theme-picker`, `.theme-preview`, `.form-actions`, `.form-message`. If your application used one of them for something of its own (a `.facts` list, a `.widget` of a dashboard), its look changes:
+  rename yours (a prefix of your application is enough) or use the Athena part. The full list is the file `docs/styling.md` (`npm run docs`); search it for the names you use.
+- **Rules of your own must not be unlayered if you want Athena to win, and the other way round**: Athena is in the layer `athena`, so any plain rule of yours beats it. That is the way to restyle, and also the way an old `.grid td` or `td` rule
+  leaks into an Athena table (add a rule for the Athena class, for example `.is-stacked .grid td`).
+- **A theme preview needs the variables for the mode**: map your theme variables for `:root, [data-theme][data-mode]`, not only for `:root[data-theme]`, otherwise the pictures of a theme in the picker all look the same.
+  `generateThemePicker({ previewModes: "both" })` shows the light and the dark picture side by side.
+- **Tests**: run the application's tests with `installDom` from `athena-ui-js/testing` instead of a copy of jsdom setup, and import Athena modules after it is installed.
+- **Escape closes a dialog by the `cancel` event** of the native `<dialog>`; a test that sends a key must dispatch `cancel`.
+- **New in 2.7.0 for what Heimdall had to write itself**: `hideLabel` for a field, `contentSize` and a right `size` on a resize of a widget, `addWidgetWithSettings`, `changeDelay` and `flush()` for the layout of a grid,
+  `getLayout({ breakpoint })`, room for a chart legend, no gap under a chart, and a page header that keeps the actions on the row of the title.
+
 ## Upgrade in five steps
 
 1. Replace `import AthenaUI from ...` and `window.` calls by named imports, or add the `classic.js` line.

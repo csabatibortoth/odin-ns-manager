@@ -16,6 +16,7 @@ import { translate } from "../../core/i18n.js";
  * @param {ReturnType<import("../../core/theme.js").createThemeManager>} options.manager
  * @param {string} [options.themeLabel] legend of the theme group (default: translated "Theme")
  * @param {string} [options.modeLabel] legend of the mode group (default: translated "Mode")
+ * @param {"current"|"both"} [options.previewModes="current"] "current": one picture, in the mode that is in use. "both": the light and the dark picture side by side, so a person sees what each mode of a theme looks like
  * @param {string} [options.class]
  * @returns {{element: HTMLElement, update: Function, destroy: Function}}
  */
@@ -42,8 +43,12 @@ export function generateThemePicker(options = {}) {
         return set;
     };
 
-    // A small page drawn with the colours of the theme, in the mode that is in use (the light one for "system" in a light browser).
-    const preview = theme => el("span", {
+    const page = (theme, mode, className) => el("span", { class: className, attrs: { "data-theme": theme.id, "data-mode": mode } },
+        el("span", { class: "theme-preview-bar" }),
+        el("span", { class: "theme-preview-body" }, el("span", { class: "theme-preview-line" }), el("span", { class: "theme-preview-button" })));
+    // A small page drawn with the colours of the theme, in the mode that is in use (the light one for "system" in a light browser), or in both modes.
+    const preview = theme => options.previewModes === "both" ? el("span", { class: "theme-preview theme-preview-both", attrs: { "aria-hidden": "true" } },
+        page(theme, "light", "theme-preview-half"), page(theme, "dark", "theme-preview-half")) : el("span", {
         class: "theme-preview",
         attrs: { "data-theme": theme.id, "data-mode": manager.appearance().dark ? "dark" : "light", "aria-hidden": "true" }
     },
@@ -64,7 +69,7 @@ export function generateThemePicker(options = {}) {
             input.checked = input.value === state[kind];
         }
         // The previews follow dark / light
-        for (const node of element.querySelectorAll(".theme-preview")) node.dataset.mode = state.dark ? "dark" : "light";
+        for (const node of element.querySelectorAll(".theme-preview:not(.theme-preview-both)")) node.dataset.mode = state.dark ? "dark" : "light";
     };
     render();
     const stop = manager.onChange(sync);

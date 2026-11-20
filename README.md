@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.8.0** - see the [release notes](#release-notes).
+Current version: **2.8.1** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -739,6 +739,13 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.8.1
+
+#### Changed
+
+- **Athena UI 2.7.** Nothing of the pages changes: the library now keeps room for a chart legend, draws no gap under a chart and ships the page-header and field fixes
+  that this application did not need a workaround for. The dependency is `^2.7.0`.
 
 ### 2.8.0
 

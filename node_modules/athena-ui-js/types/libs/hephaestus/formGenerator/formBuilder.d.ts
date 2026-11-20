@@ -45,6 +45,7 @@ export function generateButton(options?: {
  * @param {object} [options.rules] validation rules, see validateValue. They can also be given directly
  *        (required, email, minLength, ...)
  * @param {(value, field) => void} [options.onChange]
+ * @param {boolean} [options.hideLabel=false] the label is there for screen readers and the browser only (a select in a header, a compact filter): it is hidden visually, not removed
  * @param {() => object} [options.getValues] all form values (set by generateForm, used by `match`)
  * @returns {{element: HTMLElement, name: string, getValue: Function, setValue: Function, validate: Function,
  *            setError: Function, focus: Function}}
@@ -65,6 +66,7 @@ export function generateField(options?: {
     rows?: number;
     rules?: object;
     onChange?: (value: any, field: any) => void;
+    hideLabel?: boolean;
     getValues?: () => object;
 }): {
     element: HTMLElement;
