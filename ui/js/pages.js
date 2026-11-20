@@ -475,7 +475,7 @@ function recordDialog(zone, record, done) {
                 value: record?.type || 'A', disabled: Boolean(record), hint: record ? 'The type of a record cannot be changed.' : null,
             },
             {
-                name: 'data.target', label: (raw) => TARGET_LABELS[raw.type ?? (record?.type || 'A')], value: data.target, required: true,
+                name: 'data.target', label: (raw) => TARGET_LABELS[raw.type], value: data.target, required: true,
                 show: of('A', 'AAAA', 'CNAME', 'NS', 'PTR', 'SRV', 'TXT'),
                 placeholder: TARGET_PLACEHOLDERS[record?.type || 'A'],
             },

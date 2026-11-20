@@ -55,6 +55,9 @@ export function lineChart({ title, unit, series, format = formatNumber }) {
                 parent: $plot[0],
                 type: 'line',
                 gaps: true,
+                // A window that is half filled looks like a full one: no dots; the time of a value is short (the table of values is narrow)
+                points: false,
+                timeFormat: { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' },
                 responsive: true,
                 height: 190,
                 margin: { top: 10, right: 14, bottom: 24, left: 46 },
