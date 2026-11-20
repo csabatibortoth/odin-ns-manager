@@ -48,7 +48,11 @@ export function badgeText(value) {
  * @param {boolean} [options.followHash=false] the item whose `href` equals location.hash is the active one, and follows hashchange
  * @param {"bar"|"bottom-tabs"|"responsive"} [options.layout="bar"] "bottom-tabs": a bar of tabs at the bottom of the screen,
  *        groups open as sheets above it. "responsive": a bar on wide screens, bottom tabs on a tablet or phone (max 700px).
+ * @param {number} [options.breakpoint=700] layout "responsive": the screen width in px up to which the menu is a bar of tabs at the bottom
  * @param {string} [options.label] accessible name of the navigation
+ *
+ * Colours: on a coloured header set --athena-menu-bg, --athena-menu-fg, --athena-menu-hover and --athena-menu-active (the line under the active item)
+ * on the menu or on a parent (they default to a transparent bar, the colour of the text, --athena-hover and --athena-accent).
  * @param {string} [options.id]
  * @param {string} [options.class]
  * @returns {{element: HTMLElement, select: (id: string|null) => void, getActive: () => string|null, setBadge: (id: string, badge) => void,
@@ -69,6 +73,14 @@ export function generateMenu(options = {}) {
     }, list);
     const doc = element.ownerDocument;
     const view = doc.defaultView;
+    // layout "responsive": tabs at the bottom up to the breakpoint (the class is-tabs carries the style)
+    let tabsQuery = null;
+    const tabsChanged = () => element.classList.toggle("is-tabs", tabsQuery.matches);
+    if (layout === "responsive" && view?.matchMedia) {
+        tabsQuery = view.matchMedia(`(max-width: ${Number(options.breakpoint) > 0 ? Number(options.breakpoint) : 700}px)`);
+        tabsQuery.addEventListener("change", tabsChanged);
+        tabsChanged();
+    }
 
     const badgeNode = badge => {
         const spec = badge != null && typeof badge === "object" ? badge : { text: badge };
@@ -259,6 +271,7 @@ export function generateMenu(options = {}) {
         destroy() {
             closeAll();
             view.removeEventListener("hashchange", fromHash);
+            tabsQuery?.removeEventListener("change", tabsChanged);
             element.remove();
         }
     });

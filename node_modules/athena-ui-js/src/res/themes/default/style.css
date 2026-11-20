@@ -371,17 +371,48 @@ textarea {
 
 .toast-container {
     position: fixed;
-    top: 16px;
-    right: 16px;
+    top: var(--athena-toast-y, 16px);
+    right: var(--athena-toast-x, 16px);
     z-index: 2000;
     display: flex;
     flex-direction: column;
     gap: var(--athena-space-2);
     width: min(360px, calc(100vw - 32px));
+    pointer-events: none;           /* the stack must not cover what is under it: only the toasts take clicks */
+}
+
+.toast-container-top-left {
+    right: auto;
+    left: var(--athena-toast-x, 16px);
+}
+
+.toast-container-top-center {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.toast-container-bottom-right,
+.toast-container-bottom-left,
+.toast-container-bottom-center {
+    top: auto;
+    bottom: var(--athena-toast-y, 16px);
+}
+
+.toast-container-bottom-left {
+    right: auto;
+    left: var(--athena-toast-x, 16px);
+}
+
+.toast-container-bottom-center {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
 }
 
 .toast {
     box-shadow: var(--athena-shadow);
+    pointer-events: auto;
 }
 
 .progress-bar {
@@ -1674,6 +1705,63 @@ dialog.dialog::backdrop {
     margin-left: 4px;
 }
 
+/* Tables: the stacked layout of the option `stack`: while the table is narrow every row is a block and the label of the column stands next to each value */
+
+.athena-table-stackable.is-stacked {
+    overflow-x: visible;
+}
+
+.athena-table-stackable.is-stacked .athena-table,
+.athena-table-stackable.is-stacked .athena-table tbody,
+.athena-table-stackable.is-stacked .athena-table tr {
+    display: block;
+    min-width: 0;
+}
+
+.athena-table-stackable.is-stacked .athena-table thead {
+    display: none;
+}
+
+.athena-table-stackable.is-stacked .athena-table tr {
+    padding: 8px 12px;
+    border-bottom: var(--athena-border-width) solid var(--athena-line);
+}
+
+.athena-table-stackable.is-stacked .athena-table tr:last-child {
+    border-bottom: 0;
+}
+
+.athena-table-stackable.is-stacked .athena-table td {
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    width: auto;
+    max-width: none;
+    padding: 3px 0;
+    border: 0;
+    text-align: right;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.athena-table-stackable.is-stacked .athena-table td[data-label]::before {
+    content: attr(data-label);
+    flex: none;
+    max-width: 45%;
+    color: var(--athena-muted);
+    font-size: 0.8em;
+    text-align: left;
+}
+
+.athena-table-stackable.is-stacked .athena-table td.athena-table-actions {
+    justify-content: flex-end;
+    padding-top: 8px;
+}
+
+.athena-table-stackable.is-stacked .athena-table td:empty {
+    display: none;
+}
+
 /* Charts: series colours, tooltip, legend, table of values.
    An application sets --series-1 ... --series-8 (on :root or per theme) to recolour every chart. */
 
@@ -1766,6 +1854,11 @@ dialog.dialog::backdrop {
 
 /* Menu (generateMenu): a bar, or tabs at the bottom of the screen with sheets for the groups */
 
+.athena-menu {
+    background-color: var(--athena-menu-bg, transparent);
+    color: var(--athena-menu-fg, inherit);
+}
+
 .athena-menu-list {
     display: flex;
     flex-wrap: wrap;
@@ -1800,7 +1893,7 @@ dialog.dialog::backdrop {
 
 .athena-menu .menu-control:hover:not([aria-disabled="true"]):not(:disabled),
 .athena-menu .menu-control:focus-visible {
-    background-color: var(--athena-hover);
+    background-color: var(--athena-menu-hover, var(--athena-hover));
 }
 
 .athena-menu .menu-control:focus-visible {
@@ -1811,7 +1904,7 @@ dialog.dialog::backdrop {
 .athena-menu .menu-control.is-active,
 .athena-menu .has-active > .menu-control {
     font-weight: bold;
-    box-shadow: inset 0 -3px 0 var(--athena-accent);
+    box-shadow: inset 0 -3px 0 var(--athena-menu-active, var(--athena-accent));
 }
 
 .athena-menu .menu-control:disabled,
@@ -1876,13 +1969,13 @@ dialog.dialog::backdrop {
     text-align: left;
 }
 
-/* Tabs at the bottom (layout "responsive" switches to it under 700px) */
+/* Tabs at the bottom (layout "responsive" switches to it under 700px, or under the `breakpoint` option: the menu then has the class is-tabs) */
 
 .athena-menu-bottom-tabs {
     position: fixed;
     z-index: 30;
     inset: auto 0 0;
-    background: var(--athena-bg);
+    background: var(--athena-menu-bg, var(--athena-bg));
     border-top: var(--athena-border-width) solid var(--athena-line);
 }
 
@@ -1916,44 +2009,42 @@ dialog.dialog::backdrop {
     border-radius: var(--athena-radius) var(--athena-radius) 0 0;
 }
 
-@media (max-width: 700px) {
-    .athena-menu-responsive {
-        position: fixed;
-        z-index: 30;
-        inset: auto 0 0;
-        background: var(--athena-bg);
-        border-top: var(--athena-border-width) solid var(--athena-line);
-    }
+.athena-menu-responsive.is-tabs {
+    position: fixed;
+    z-index: 30;
+    inset: auto 0 0;
+    background: var(--athena-menu-bg, var(--athena-bg));
+    border-top: var(--athena-border-width) solid var(--athena-line);
+}
 
-    .athena-menu-responsive .athena-menu-list {
-        flex-wrap: nowrap;
-        justify-content: space-around;
-        gap: 0;
-    }
+.athena-menu-responsive.is-tabs .athena-menu-list {
+    flex-wrap: nowrap;
+    justify-content: space-around;
+    gap: 0;
+}
 
-    .athena-menu-responsive .menu-item {
-        flex: 1;
-        position: static;
-    }
+.athena-menu-responsive.is-tabs .menu-item {
+    flex: 1;
+    position: static;
+}
 
-    .athena-menu-responsive .menu-item-end {
-        margin-left: 0;
-    }
+.athena-menu-responsive.is-tabs .menu-item-end {
+    margin-left: 0;
+}
 
-    .athena-menu-responsive .menu-control {
-        flex-direction: column;
-        width: 100%;
-        gap: 2px;
-        padding: 6px 4px;
-        font-size: 0.75em;
-    }
+.athena-menu-responsive.is-tabs .menu-control {
+    flex-direction: column;
+    width: 100%;
+    gap: 2px;
+    padding: 6px 4px;
+    font-size: 0.75em;
+}
 
-    .athena-menu-responsive .menu-sheet {
-        position: fixed;
-        inset: auto 0 56px;
-        margin: 0;
-        border-radius: var(--athena-radius) var(--athena-radius) 0 0;
-    }
+.athena-menu-responsive.is-tabs .menu-sheet {
+    position: fixed;
+    inset: auto 0 56px;
+    margin: 0;
+    border-radius: var(--athena-radius) var(--athena-radius) 0 0;
 }
 
 /* Menu: groups inside groups, and badges */

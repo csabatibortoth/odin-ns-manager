@@ -9,6 +9,7 @@ import { translate } from "../../core/i18n.js";
 
 const TOAST_CONTAINER_ID = "athena-toasts";
 const URGENT_TYPES = new Set(["error", "warning"]);
+const TOAST_POSITIONS = ["top-right", "top-left", "top-center", "bottom-right", "bottom-left", "bottom-center"];
 
 function closeButton(onclick) {
     return el("button", {
@@ -27,14 +28,23 @@ function closeButton(onclick) {
  * @param {string} [options.title]
  * @param {"info"|"success"|"warning"|"error"} [options.type="info"]
  * @param {number} [options.duration=4000] ms before it disappears, 0 keeps it until it is closed
+ * @param {"top-right"|"top-left"|"top-center"|"bottom-right"|"bottom-left"|"bottom-center"} [options.position="top-right"] the corner (or the middle of an edge) of the window.
+ *        Every position has its own stack. An application that keeps its main buttons in the top right corner shows its toasts at the bottom.
+ * @param {{x?: number, y?: number}} [options.offset] the distance from the edge in px (default 16); also the variables --athena-toast-x and --athena-toast-y
  * @returns {{close: Function}}
  */
 export function showToast(options) {
-    const { message, title, type = "info", duration = 4000 } = typeof options === "string" ? { message: options } : options;
-    let container = document.getElementById(TOAST_CONTAINER_ID);
+    const { message, title, type = "info", duration = 4000, offset } = typeof options === "string" ? { message: options } : options;
+    const position = TOAST_POSITIONS.includes(options?.position) ? options.position : "top-right";
+    const containerId = position === "top-right" ? TOAST_CONTAINER_ID : `${TOAST_CONTAINER_ID}-${position}`;
+    let container = document.getElementById(containerId);
     if (!container) {
-        container = el("div", { id: TOAST_CONTAINER_ID, class: "toast-container" });
+        container = el("div", { id: containerId, class: cx("toast-container", `toast-container-${position}`) });
         document.body.append(container);
+    }
+    if (offset) {
+        if (Number.isFinite(offset.x)) container.style.setProperty("--athena-toast-x", `${offset.x}px`);
+        if (Number.isFinite(offset.y)) container.style.setProperty("--athena-toast-y", `${offset.y}px`);
     }
     let timer;
     const close = () => {

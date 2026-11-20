@@ -24,6 +24,13 @@ const svgEl = (tag, attrs = {}, text) => {
 const seriesClass = index => `s${(index % SERIES_COLORS) + 1}`;
 // A colour given by the caller goes in the `color` attribute (the shapes paint with currentColor); otherwise the class picks it from the theme.
 const seriesProps = (series, index) => (series.color ? { color: series.color } : { class: seriesClass(index) });
+// The time in a tooltip and in the table of values: `timeFormat` is a function (milliseconds) => text, or the options of Intl.DateTimeFormat
+const DEFAULT_TIME_FORMAT = { dateStyle: "medium", timeStyle: "medium" };
+function makeTimeFormatter(timeFormat) {
+    if (typeof timeFormat === "function") return timeFormat;
+    const formatter = new Intl.DateTimeFormat(getLocale(), timeFormat && typeof timeFormat === "object" ? timeFormat : DEFAULT_TIME_FORMAT);
+    return t => formatter.format(t);
+}
 const formatNumber = n => Number.isInteger(n) ? String(n) : String(+n.toFixed(2));
 
 // Rounded axis maximum and tick step, so ticks land on readable numbers.
@@ -259,9 +266,9 @@ function drawLine(svg, ctx) {
     const clip = svgEl("clipPath", { id: clipId });
     clip.append(svgEl("rect", { x: MARGIN.left, y: MARGIN.top - 4, width: plotW, height: plotH + 8 }));
     svg.append(clip);
-    const timeFormat = times ? new Intl.DateTimeFormat(getLocale(), { dateStyle: "medium", timeStyle: "medium" }) : null;
-    const when = i => (times ? timeFormat.format(times[i]) : (labels[i] ?? ""));
-    const dotted = Math.max(...visible.map(v => v.length)) <= DOT_LIMIT;
+    const when = i => (times ? ctx.formatTime(times[i]) : (labels[i] ?? ""));
+    // `points: false` never draws the dots (the tooltip still follows the pointer and the keyboard), so a chart with few points looks like one with many
+    const dotted = options.points !== false && Math.max(...visible.map(v => v.length)) <= DOT_LIMIT;
 
     series.forEach((s, si) => {
         // Neighbours outside the view keep the line running to the edge of the plot
@@ -287,7 +294,12 @@ function drawLine(svg, ctx) {
                 const outline = [`M${points[0][0]},${baseline}`, ...points.map(p => `L${p.join(",")}`), `L${points.at(-1)[0]},${baseline}`, "Z"];
                 clipped.append(svgEl("path", { d: outline.join(" "), class: "chart-area" }));
             }
-            if (points.length === 1 && options.gaps) clipped.append(svgEl("circle", { cx: points[0][0], cy: points[0][1], r: 2.5, class: "chart-point chart-lone-point" }));
+            if (points.length === 1 && options.gaps) {
+                // a lone point keeps a tooltip of its own, also when the chart draws no dots
+                const lone = svgEl("circle", { cx: points[0][0], cy: points[0][1], r: 2.5, class: "chart-point chart-lone-point" });
+                if (options.interactive !== false) addTip(ctx, lone, points[0][0], points[0][1], [`${s.name ?? ""} ${when(members[0])}`.trim(), format(s.data[members[0]])]);
+                clipped.append(lone);
+            }
             else clipped.append(svgEl("polyline", { points: points.map(p => p.join(",")).join(" "), class: "chart-line", fill: "none", pathLength: 1 }));
         }
         group.append(clipped);
@@ -386,6 +398,7 @@ function drawLine(svg, ctx) {
             let next;
             if (event.key === "+" || event.key === "=") next = { from: mid - span / 4, to: mid + span / 4 };
             else if (event.key === "-" || event.key === "_") next = { from: mid - span, to: mid + span };
+            else if (event.altKey) return;                  // Alt + arrows read the values (below)
             else if (event.key === "ArrowLeft") next = { from: view.from - span / 4, to: view.to - span / 4 };
             else if (event.key === "ArrowRight") next = { from: view.from + span / 4, to: view.to + span / 4 };
             else if (event.key === "0" || event.key === "Escape") next = null;
@@ -406,6 +419,38 @@ function drawLine(svg, ctx) {
             svg.append(reset);
         }
     }
+    // Reading the values with the keyboard: the arrow keys move the tooltip from point to point (with `zoom` the arrows pan, so Alt + arrow reads),
+    // Home and End go to the first and the last point, Escape hides the tooltip
+    if (!options.zoom) {
+        hit.setAttribute("tabindex", "0");
+        hit.setAttribute("role", "application");
+        hit.setAttribute("aria-label", translate("chart.readHint"));
+    }
+    let reading = null;
+    const readable = () => {
+        const byPosition = new Map();
+        series.forEach((s, si) => visible[si].forEach(i => { if (!byPosition.has(position(i))) byPosition.set(position(i), i); }));
+        return [...byPosition].sort((a, b) => a[0] - b[0]).map(entry => entry[1]);
+    };
+    hit.addEventListener("keydown", event => {
+        if (options.zoom && !event.altKey && event.key !== "Home" && event.key !== "End") return;
+        const all = readable();
+        if (!all.length) return;
+        let at = reading == null ? -1 : all.indexOf(reading);
+        if (event.key === "ArrowRight") at = at < 0 ? 0 : Math.min(at + 1, all.length - 1);
+        else if (event.key === "ArrowLeft") at = at < 0 ? all.length - 1 : Math.max(at - 1, 0);
+        else if (event.key === "Home") at = 0;
+        else if (event.key === "End") at = all.length - 1;
+        else if (event.key === "Escape" && !options.zoom) {
+            reading = null;
+            hideAt();
+            return;
+        } else return;
+        event.preventDefault();
+        reading = all[at];
+        showAt(reading);
+    });
+    hit.addEventListener("blur", () => { reading = null; hideAt(); });
     svg.append(marker, selection, hit);
 }
 
@@ -483,7 +528,7 @@ const DRAWERS = {
 /* ------------------TABLE OF VALUES------------------- */
 
 // The same numbers as a table, for screen readers and for people who want to read them off or copy them.
-function buildDataTable({ labels, series, times, title, type, format = formatNumber }) {
+function buildDataTable({ labels, series, times, title, type, format = formatNumber, formatTime }) {
     const details = document.createElement("details");
     details.className = "chart-data";
     const summary = document.createElement("summary");
@@ -502,7 +547,7 @@ function buildDataTable({ labels, series, times, title, type, format = formatNum
     const body = table.createTBody();
     const shown = type === "pie" || type === "donut" ? [series[0]] : series;
     const count = Math.max(...shown.map(s => s.data.length));
-    const when = times ? new Intl.DateTimeFormat(getLocale(), { dateStyle: "medium", timeStyle: "medium" }) : null;
+    const when = times ? { format: formatTime } : null;
     for (let i = 0; i < count; i++) {
         const row = body.insertRow();
         const head = document.createElement("th");
@@ -534,7 +579,8 @@ function buildDataTable({ labels, series, times, title, type, format = formatNum
  * @param {boolean} [options.table=false] adds a "Show as table" section with the values below the chart
  * @param {boolean} [options.zero=true] line charts: false lets the value axis start near the smallest value
  * @param {boolean} [options.zoom=false] line and area charts: drag over the plot to zoom into that range, double click (or the
- *        reset button, or 0 / Esc) to zoom out; with the keyboard on the plot: + and - zoom, the arrow keys pan
+ *        reset button, or 0 / Esc) to zoom out; with the keyboard on the plot: + and - zoom, the arrow keys pan.
+ *        Without `zoom` the arrow keys on the plot read the values from point to point (Home and End: first and last, Esc: hide); with `zoom` that is Alt + arrow
  * @param {{from: number, to: number}|null} [options.zoomRange] the range in view, in the units of the x axis: milliseconds with
  *        `times`, otherwise the index of the point (-0.5 is the left edge of the first point)
  * @param {(range: ({from: number, to: number}|null)) => void} [options.onZoom] called when a person zooms or resets
@@ -547,6 +593,9 @@ function buildDataTable({ labels, series, times, title, type, format = formatNum
  * @param {{from: (number|Date|string), to: (number|Date|string)}} [options.timeRange] line and area charts with `times`: the range of the time axis, when it is not the one
  *        the data covers (the last hour, of which only the last quarter has been measured)
  * @param {(value: number) => string} [options.format] how a value is written: on the axis, in the tooltips and in the table of values (default: whole numbers, otherwise two decimals)
+ * @param {((time: number) => string)|Intl.DateTimeFormatOptions} [options.timeFormat] how a time is written in the tooltips and in the table of values (`times` only): a function of the
+ *        time in milliseconds, or the options of Intl.DateTimeFormat (default: `{ dateStyle: "medium", timeStyle: "medium" }`, for example "Nov 19, 2026, 6:15:09 PM")
+ * @param {boolean} [options.points=true] line and area charts: false never draws the dots, however few the points are (the tooltip still follows the pointer and the keyboard)
  * @param {(value: number) => string} [options.tickFormat] how the numbers of the value axis are written, when they should not be written like the values (a chart of whole numbers has ticks of 0.2)
  * @param {{top?: number, right?: number, bottom?: number, left?: number}} [options.margin] room around the plot in px (default 40, 20, 50, 55): a chart without a title and a legend does not need the top
  * @param {boolean} [options.responsive=false] the chart is as wide as its parent and follows it when it changes (`height` stays); `width` is only the first guess
@@ -706,7 +755,8 @@ function buildChart(options = {}, hooks, { animate = false } = {}) {
     const margin = { ...DEFAULT_MARGIN, ...(options.margin ?? {}) };
     const format = typeof options.format === "function" ? options.format : formatNumber;
     const tickFormat = typeof options.tickFormat === "function" ? options.tickFormat : format;
-    const ctx = { labels, series, width, height, times, options, tooltip, hooks, zoom: options.zoomRange ?? null, margin, format, tickFormat };
+    const formatTime = makeTimeFormatter(options.timeFormat);
+    const ctx = { labels, series, width, height, times, options, tooltip, hooks, zoom: options.zoomRange ?? null, margin, format, tickFormat, formatTime };
     const pieLegend = draw(svg, ctx);
     if (!sparkline && (options.legend ?? (Boolean(pieLegend) || series.length > 1))) {
         addLegend(svg, pieLegend ?? series.map((s, i) => ({ name: s.name ?? `${translate("series")} ${i + 1}`, props: seriesProps(s, i), series: i })), width, height, ctx);
@@ -718,5 +768,5 @@ function buildChart(options = {}, hooks, { animate = false } = {}) {
         entry?.setAttribute("aria-pressed", "false");
         entry?.classList.add("is-off");
     }
-    return { svg, table: options.table ? buildDataTable({ labels, series, times, title, type, format }) : null };
+    return { svg, table: options.table ? buildDataTable({ labels, series, times, title, type, format, formatTime }) : null };
 }

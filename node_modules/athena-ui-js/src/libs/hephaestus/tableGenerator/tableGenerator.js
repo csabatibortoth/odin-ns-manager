@@ -71,6 +71,9 @@ const compare = (a, b) =>
  * @param {number} [options.chunkSize=50] rows per request of a data source with `virtual`
  * @param {boolean} [options.animateRows=false] rows slide to their new place when the table is sorted, filtered or changes page, and new rows fade in
  *        (at most 60 rows are animated, none under reduced motion, none in a virtual table)
+ * @param {boolean|number} [options.stack=false] a narrow table shows every row as a block, with the label of the column next to each value (no sideways scrolling).
+ *        true: when the table is narrower than 600 px; a number: the width in px below which it stacks. It follows the width of the table, not of the screen,
+ *        and the table gets the class `is-stacked` while it is stacked. Not for virtual tables (their rows have a fixed height).
  * @param {number} [options.filterDelay=300] ms to wait after typing before the data source is asked
  * @param {{label: string, onclick: (row: object) => void, danger?: boolean, hidden?: (row: object) => boolean, ariaLabel?: (row: object) => string}[]} [options.rowActions]
  *        a column of buttons at the end of every row
@@ -113,6 +116,15 @@ export function generateTable(options = {}) {
     if (options.density === "compact") table.classList.add("athena-table-compact");
     if (options.wrap === true) table.classList.add("athena-table-wrap");
     else if (options.wrap === false) table.classList.add("athena-table-nowrap");
+    // `stack`: a row becomes a block while the table is narrower than the breakpoint (the style is in the theme: .athena-table-stackable.is-stacked)
+    const stackAt = options.stack === true ? 600 : Number(options.stack) || 0;
+    if (stackAt && !virtual) {
+        root.classList.add("athena-table-stackable");
+        const apply = () => root.classList.toggle("is-stacked", root.clientWidth > 0 && root.clientWidth < stackAt);
+        // Stacking changes the height of the table: do it in the next frame, or the observer reports a loop
+        if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => requestAnimationFrame(apply)).observe(root);
+        apply();
+    }
     let scroller = null;
     if (virtual) {
         table.classList.add("athena-table-virtual");

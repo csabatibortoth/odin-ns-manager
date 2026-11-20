@@ -27,7 +27,8 @@ export function decimate(indices: any, values: any, buckets: any): any;
  * @param {boolean} [options.table=false] adds a "Show as table" section with the values below the chart
  * @param {boolean} [options.zero=true] line charts: false lets the value axis start near the smallest value
  * @param {boolean} [options.zoom=false] line and area charts: drag over the plot to zoom into that range, double click (or the
- *        reset button, or 0 / Esc) to zoom out; with the keyboard on the plot: + and - zoom, the arrow keys pan
+ *        reset button, or 0 / Esc) to zoom out; with the keyboard on the plot: + and - zoom, the arrow keys pan.
+ *        Without `zoom` the arrow keys on the plot read the values from point to point (Home and End: first and last, Esc: hide); with `zoom` that is Alt + arrow
  * @param {{from: number, to: number}|null} [options.zoomRange] the range in view, in the units of the x axis: milliseconds with
  *        `times`, otherwise the index of the point (-0.5 is the left edge of the first point)
  * @param {(range: ({from: number, to: number}|null)) => void} [options.onZoom] called when a person zooms or resets
@@ -40,6 +41,9 @@ export function decimate(indices: any, values: any, buckets: any): any;
  * @param {{from: (number|Date|string), to: (number|Date|string)}} [options.timeRange] line and area charts with `times`: the range of the time axis, when it is not the one
  *        the data covers (the last hour, of which only the last quarter has been measured)
  * @param {(value: number) => string} [options.format] how a value is written: on the axis, in the tooltips and in the table of values (default: whole numbers, otherwise two decimals)
+ * @param {((time: number) => string)|Intl.DateTimeFormatOptions} [options.timeFormat] how a time is written in the tooltips and in the table of values (`times` only): a function of the
+ *        time in milliseconds, or the options of Intl.DateTimeFormat (default: `{ dateStyle: "medium", timeStyle: "medium" }`, for example "Nov 19, 2026, 6:15:09 PM")
+ * @param {boolean} [options.points=true] line and area charts: false never draws the dots, however few the points are (the tooltip still follows the pointer and the keyboard)
  * @param {(value: number) => string} [options.tickFormat] how the numbers of the value axis are written, when they should not be written like the values (a chart of whole numbers has ticks of 0.2)
  * @param {{top?: number, right?: number, bottom?: number, left?: number}} [options.margin] room around the plot in px (default 40, 20, 50, 55): a chart without a title and a legend does not need the top
  * @param {boolean} [options.responsive=false] the chart is as wide as its parent and follows it when it changes (`height` stays); `width` is only the first guess
@@ -88,6 +92,8 @@ export function generateChart(options?: {
         to: (number | Date | string);
     };
     format?: (value: number) => string;
+    timeFormat?: ((time: number) => string) | Intl.DateTimeFormatOptions;
+    points?: boolean;
     tickFormat?: (value: number) => string;
     margin?: {
         top?: number;

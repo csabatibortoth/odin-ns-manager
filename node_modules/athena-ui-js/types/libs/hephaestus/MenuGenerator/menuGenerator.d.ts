@@ -18,7 +18,11 @@ export function badgeText(value: any): string;
  * @param {boolean} [options.followHash=false] the item whose `href` equals location.hash is the active one, and follows hashchange
  * @param {"bar"|"bottom-tabs"|"responsive"} [options.layout="bar"] "bottom-tabs": a bar of tabs at the bottom of the screen,
  *        groups open as sheets above it. "responsive": a bar on wide screens, bottom tabs on a tablet or phone (max 700px).
+ * @param {number} [options.breakpoint=700] layout "responsive": the screen width in px up to which the menu is a bar of tabs at the bottom
  * @param {string} [options.label] accessible name of the navigation
+ *
+ * Colours: on a coloured header set --athena-menu-bg, --athena-menu-fg, --athena-menu-hover and --athena-menu-active (the line under the active item)
+ * on the menu or on a parent (they default to a transparent bar, the colour of the text, --athena-hover and --athena-accent).
  * @param {string} [options.id]
  * @param {string} [options.class]
  * @returns {{element: HTMLElement, select: (id: string|null) => void, getActive: () => string|null, setBadge: (id: string, badge) => void,
@@ -31,6 +35,7 @@ export function generateMenu(options?: {
     active?: string;
     followHash?: boolean;
     layout?: "bar" | "bottom-tabs" | "responsive";
+    breakpoint?: number;
     label?: string;
     id?: string;
     class?: string;

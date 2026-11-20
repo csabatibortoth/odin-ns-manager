@@ -265,7 +265,10 @@ export function generateField(options = {}) {
         },
         /** Changes the text of the label (the star of a required field stays). */
         setLabel(text) {
-            if (caption?.firstChild?.nodeType === Node.TEXT_NODE) caption.firstChild.nodeValue = text;
+            if (!caption) return;
+            text = text == null ? "" : String(text);
+            if (caption.firstChild?.nodeType === Node.TEXT_NODE) caption.firstChild.nodeValue = text;
+            else caption.prepend(document.createTextNode(text));     // an empty label has no text node yet
         },
         resetState() {
             touched = false;
@@ -365,7 +368,8 @@ export function generateForm(options = {}) {
         shown[definition.name] = true;
         const field = generateField({
             ...definition,
-            label: typeof definition.label === "function" ? definition.label({}) : definition.label,
+            // A label that is a function always gets its caption, even when the first answer is empty: arrange() writes the text
+            label: typeof definition.label === "function" ? definition.label({}) ?? "" : definition.label,
             parent: element,
             getValues: getRawValues,
             onChange: (value, source) => {
@@ -391,8 +395,14 @@ export function generateForm(options = {}) {
         getRawValues,
         arrange,
         submitButton,
-        setValues(values) {
-            for (const [name, value] of Object.entries(values)) fields[name]?.setValue(value);
+        // With `nested`, { soa: { host: "x" } } sets the field "soa.host" (the shape getValues() returns); { "soa.host": "x" } works as well
+        setValues(values, prefix = "") {
+            for (const [name, value] of Object.entries(values ?? {})) {
+                const path = prefix + name;
+                if (fields[path]) fields[path].setValue(value);
+                else if (options.nested && value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date)) form.setValues(value, path + ".");
+            }
+            arrange();
         },
         // Shows server side errors: { username: "Already taken" }
         setErrors(errors) {
