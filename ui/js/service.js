@@ -139,8 +139,43 @@ function delegationCard(records) {
     );
 }
 
+function lastTestText(last) {
+    if (!last) return 'none since the start';
+    return [last.ok ? badge('Passed', 'ok') : badge('Failed', 'danger'), ' ', formatDate(last.at)];
+}
+
+// What a test did, step by step
+function testCard(result) {
+    const rows = result.steps.map(({ step, ok, detail, ms }) => [
+        step,
+        el('span', {}, ok ? badge('ok', 'ok') : badge('failed', 'danger'), ' ', el('span', { class: 'mono small break', text: detail || '' }), ' ', el('span', { class: 'muted small', text: `${ms} ms` })),
+    ]);
+    return card(
+        result.ok ? 'Test passed' : 'Test failed',
+        rows,
+        el('p', { class: 'muted', text: `Against ${result.directory}. Nothing was installed: the certificate that the test authority issued is thrown away.` })
+    );
+}
+
+// Runs the whole order against the staging authority of Let's Encrypt and shows the steps in $result
+function testButton($result, refresh) {
+    return button("Test with Let's Encrypt staging", async () => {
+        $result.empty().append(el('p', { class: 'muted', text: 'Running the test against the staging authority. It can take a minute.' }));
+        try {
+            const result = await api('POST', '/certificate/test');
+            $result.empty().append(testCard(result));
+            notice(result.ok ? 'ok' : 'error', result.ok ? 'The test passed' : `The test failed: ${result.error}`);
+            await refresh();
+        } catch (err) {
+            $result.empty();
+            showError(err);
+        }
+    }, 'small');
+}
+
 export async function certificate($page) {
     const $body = el('div');
+    const $test = el('div');
 
     const show = (status) => {
         $body.empty();
@@ -180,16 +215,20 @@ export async function certificate($page) {
                         ['Renewed by itself', status.automaticRenewal ? badge('Yes', 'ok') : badge('No')],
                         ['Last check', formatDate(status.lastCheckAt)],
                         ['Last failure', status.lastError ? el('span', { class: 'field-error break', text: status.lastError }) : '–'],
+                        // 'lastTest' is there from freya-ns-api 2.5.0 on
+                        ...(!custom && 'lastTest' in status ? [['Last test', lastTestText(status.lastTest)]] : []),
                     ],
                     button(custom ? 'Read the files again' : 'Renew now', async () => {
                         show(await api('POST', '/certificate/renew'));
                         notice('ok', custom ? 'The certificate files are read again' : 'A new certificate is issued');
-                    }, 'small')
+                    }, 'small'),
+                    !custom && 'lastTest' in status ? testButton($test, async () => show(await api('GET', '/certificate'))) : null
                 )
             )
         );
         // Delegation: what the owner of each domain has to add at the real DNS, once
         if (status.challenge?.recordsToAdd?.length) $body.append(delegationCard(status.challenge.recordsToAdd));
+        $body.append($test);
         if (custom) $body.append(uploadCard(show));
     };
 

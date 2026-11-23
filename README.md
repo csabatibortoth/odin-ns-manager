@@ -565,6 +565,14 @@ one of two sources, `ODIN_HTTPS_CERT_SOURCE`:
   [freya-ns-api documentation](https://github.com/csabatibortoth/freya-ns-api#dns-validation-dns-01).
   Needs freya-ns-api 2.4.0 or later.
 
+The Certificate page has a button **Test with Let's Encrypt staging**: it runs a
+whole order with the real settings (names, challenge, provider) against the
+staging authority, shows every step (`record written`, `record visible`,
+`record removed`, `authority validated the names`, ...) and the reason when one
+fails, and installs nothing. Use it after changing the names, the challenge or
+the provider (needs freya-ns-api 2.5.0 or later; the button is not shown with an
+older one).
+
 The Certificate page shows the certificate that is served and when it expires,
 how its names are proven, and, for the delegation, the CNAME records to add at
 the DNS of your domains. The Heimdall plugin sends `aesir.certificate.days_left`,
@@ -799,6 +807,7 @@ temporary file; they need no database.
 #### New
 
 - **Let's Encrypt with DNS validation** (needs freya-ns-api 2.4.0): wildcard names and no port 80, through a zone of this server, a CNAME at any DNS host, or Cloudflare. The Certificate page shows how the names are proven and the CNAME records to add.
+- **Test button** on the Certificate page: a whole order against the Let's Encrypt staging authority with the real settings, step by step, nothing installed (freya-ns-api 2.5.0).
 - **Certificate alerts**: the metrics `aesir.certificate.days_left` and `aesir.certificate.renewal_failing`, and a mail when a renewal fails or fewer than 14 days are left.
 - The dashboard counts refused queries; the Heimdall metric `aesir.dns.queries` has the kind `refused`.
 
