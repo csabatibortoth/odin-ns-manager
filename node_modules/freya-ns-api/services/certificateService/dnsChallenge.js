@@ -44,20 +44,67 @@ function planFor(mode, domains) {
 
 const sleepFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Asks public resolvers whether the TXT record can be seen.
-async function visibleOnPublicResolvers(name, value) {
+// What one public resolver says about the record: 'yes' (it has the value), 'no' (it answered, without the value: nothing
+// there, or an older value) or 'unreachable' (no answer: a timeout, a refusal, a blocked network: it tells nothing).
+async function askResolver(server, name, value) {
+    const resolver = new dns.promises.Resolver({ timeout: 3000, tries: 1 });
+    resolver.setServers([server]);
+    try {
+        const answers = await resolver.resolveTxt(name);
+        return answers.some((chunks) => chunks.join('') === value) ? 'yes' : 'no';
+    } catch (err) {
+        return err.code === 'ENODATA' || err.code === 'ENOTFOUND' ? 'no' : 'unreachable';
+    }
+}
+
+// The record counts as visible when one public resolver has it. (Requiring all of them was tried: it made a real order wait
+// 60 seconds longer, for the negative answers that the polling itself had put into those caches.) `ask` is injected for the tests.
+async function visibleOnPublicResolvers(name, value, ask = askResolver) {
     for (const server of PUBLIC_RESOLVERS) {
-        const resolver = new dns.promises.Resolver({ timeout: 3000, tries: 1 });
-        resolver.setServers([server]);
-        const answers = await resolver.resolveTxt(name).catch(() => []);
-        if (answers.some((chunks) => chunks.join('') === value)) return true;
+        if ((await ask(server, name, value)) === 'yes') return true;
     }
     return false;
 }
 
+// The name servers of the zone that holds `name`, as addresses: the NS records of the nearest parent that has some.
+async function authoritativeAddresses(name, resolver = dns.promises) {
+    const labels = name.split('.');
+    for (let at = 1; at < labels.length - 1; at++) {
+        const hosts = await resolver.resolveNs(labels.slice(at).join('.')).catch(() => []);
+        if (!hosts.length) continue;
+        const found = await Promise.all(hosts.map((host) => resolver.resolve4(host).catch(() => [])));
+        return [...new Set(found.flat())];
+    }
+    return [];
+}
+
+// Asks the authoritative name servers of the zone themselves, which have no cache that could be stale: the record is
+// published when every one that answers has it (and at least one does). Returns true or false, or null when the servers
+// cannot be found (the caller then falls back to the public resolvers). `deps` is injected for the tests.
+async function visibleOnAuthoritative(name, value, { addresses = authoritativeAddresses, ask = askResolver } = {}) {
+    const servers = await addresses(name);
+    if (!servers.length) return null;
+    const answers = await Promise.all(servers.map((server) => ask(server, name, value)));
+    if (!answers.includes('yes') && !answers.includes('no')) return null; // none answered
+    return answers.includes('yes') && !answers.includes('no');
+}
+
+// Some failures of the authority are about timing, not about this setup: say so, and what to do.
+const STALE_RECORD = /secondary validation|incorrect txt record/i;
+function explainFailure(message) {
+    if (!STALE_RECORD.test(String(message))) return '';
+    return (
+        ' A validation server of the authority saw a TXT record that is not the one of this order: it may still hold an older copy ' +
+        '(the challenge records live 60 seconds, and several orders for the same name close together can meet it). ' +
+        'Wait two minutes and try again; failed validations count against the limits of the authority.'
+    );
+}
+
 // The two functions acme-client calls, plus `cleanup`, which removes what is left after a failure.
 // options.waitSeconds: how long to wait for the record to be visible before giving up.
-function createHandlers(provider, { waitSeconds = 120, sleep = sleepFor, now = Date.now, log = () => {}, onEvent = () => {} } = {}) {
+// options.settleSeconds: a short wait after the record is visible, before the authority is asked (it validates from several
+// places with caches of their own); 0 switches it off.
+function createHandlers(provider, { waitSeconds = 120, settleSeconds = 0, sleep = sleepFor, now = Date.now, log = () => {}, onEvent = () => {} } = {}) {
     const visible = provider.visible ? provider.visible.bind(provider) : visibleOnPublicResolvers;
     // What was written and not yet removed: a challenge that fails must not leave a record behind.
     const written = new Map();
@@ -91,6 +138,10 @@ function createHandlers(provider, { waitSeconds = 120, sleep = sleepFor, now = D
         onEvent('record written', name);
         await waitUntilVisible(name, keyAuthorization);
         onEvent('record visible', name);
+        if (settleSeconds > 0) {
+            await sleep(settleSeconds * 1000);
+            onEvent('settled', `${settleSeconds} s`);
+        }
     }
 
     async function remove(authz, challenge, keyAuthorization) {
@@ -118,4 +169,4 @@ function createHandlers(provider, { waitSeconds = 120, sleep = sleepFor, now = D
     return { create, remove, cleanup, written };
 }
 
-module.exports = { MODES, PREFIX, isWildcard, challengeName, planFor, createHandlers };
+module.exports = { MODES, PREFIX, isWildcard, challengeName, planFor, createHandlers, visibleOnPublicResolvers, visibleOnAuthoritative, authoritativeAddresses, explainFailure };

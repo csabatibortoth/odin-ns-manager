@@ -53,11 +53,14 @@ module.exports = Object.freeze({
     acmeCloudflareToken: env.FREYA_ACME_CLOUDFLARE_TOKEN || '',
     acmeCloudflareTokenFile: env.FREYA_ACME_CLOUDFLARE_TOKEN_FILE || '',
     acmeCloudflareZoneId: (env.FREYA_ACME_CLOUDFLARE_ZONE_ID || '').trim(),
+    // dns-01: seconds to wait after the record is visible, before the authority is asked (it validates from several places
+    // with caches of their own). 0 switches it off.
+    acmeDnsSettle: number(env.FREYA_ACME_DNS_SETTLE, 60),
     // dns-01: seconds to wait for the record to be answered before giving up.
     acmeDnsWait: number(env.FREYA_ACME_DNS_WAIT, 120),
     // letsencrypt: where the account key, the private key and the certificate are kept.
     acmeFolder: env.FREYA_ACME_FOLDER || 'sslcert/letsencrypt',
-    version: '2.5.0',
+    version: '2.5.1',
     type: env.FREYA_TYPE || 'DEV',
 
     modelServerType: 'MNG',

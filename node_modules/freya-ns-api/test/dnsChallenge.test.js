@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { planFor, challengeName, createHandlers } = require('../services/certificateService/dnsChallenge');
+const { planFor, challengeName, createHandlers, visibleOnPublicResolvers, visibleOnAuthoritative, authoritativeAddresses, explainFailure } = require('../services/certificateService/dnsChallenge');
 
 const authz = (value) => ({ identifier: { type: 'dns', value } });
 const dns01 = { type: 'dns-01' };
@@ -108,4 +108,69 @@ test('the provider registry says what is wrong', () => {
     const providers = require('../services/certificateService/dnsProviders');
     assert.throws(() => providers.get(''), /FREYA_ACME_DNS_PROVIDER is required/);
     assert.throws(() => providers.get('__proto__'), /not known/);
+});
+
+test('visible on public resolvers: one that has it is enough', async () => {
+    const decide = (answers) => visibleOnPublicResolvers('_acme-challenge.example.com', 'v', async (server) => answers[['1.1.1.1', '8.8.8.8'].indexOf(server)]);
+    assert.equal(await decide(['yes', 'no']), true);
+    assert.equal(await decide(['no', 'yes']), true);
+    assert.equal(await decide(['unreachable', 'yes']), true);
+    assert.equal(await decide(['no', 'no']), false);
+    assert.equal(await decide(['unreachable', 'unreachable']), false);
+});
+
+test('visible on the authoritative servers: every one that answers has it, and at least one does', async () => {
+    const decide = (answers) => visibleOnAuthoritative('_acme-challenge.example.com', 'v', {
+        addresses: async () => ['192.0.2.1', '192.0.2.2'],
+        ask: async (server) => answers[['192.0.2.1', '192.0.2.2'].indexOf(server)],
+    });
+    assert.equal(await decide(['yes', 'yes']), true);
+    assert.equal(await decide(['yes', 'unreachable']), true, 'one that does not answer tells nothing');
+    assert.equal(await decide(['yes', 'no']), false, 'a name server that does not have it yet: too early');
+    assert.equal(await decide(['no', 'no']), false);
+    assert.equal(await decide(['unreachable', 'unreachable']), null, 'nobody answered: unknown, the caller falls back');
+    assert.equal(await visibleOnAuthoritative('x.example.com', 'v', { addresses: async () => [], ask: async () => 'yes' }), null, 'no servers found: unknown');
+});
+
+test('the name servers are found at the nearest parent that has NS records, as addresses', async () => {
+    const calls = [];
+    const fake = {
+        resolveNs: async (zone) => {
+            calls.push(zone);
+            if (zone === 'example.com') return ['ns1.example.net', 'ns2.example.net'];
+            throw Object.assign(new Error('no'), { code: 'ENODATA' });
+        },
+        resolve4: async (host) => (host === 'ns1.example.net' ? ['192.0.2.1'] : ['192.0.2.2', '192.0.2.1']),
+    };
+    assert.deepEqual(await authoritativeAddresses('_acme-challenge.www.example.com', fake), ['192.0.2.1', '192.0.2.2']);
+    assert.deepEqual(calls, ['www.example.com', 'example.com']);
+    assert.deepEqual(await authoritativeAddresses('_acme-challenge.nothing.invalid', { resolveNs: async () => { throw new Error('x'); }, resolve4: async () => [] }), []);
+});
+
+test('the settle wait comes after the record is visible, and is reported', async () => {
+    const provider = memoryProvider();
+    const clock = fakeClock();
+    const events = [];
+    const handlers = createHandlers(provider, { waitSeconds: 60, settleSeconds: 7, ...clock, onEvent: (type) => events.push(type) });
+    await handlers.create(authz('example.com'), dns01, 'VALUE1');
+    assert.deepEqual(events, ['record written', 'record visible', 'settled']);
+    assert.equal(clock.now(), 7000, 'the record was visible at once: only the settle wait passed');
+});
+
+test('no settle wait when it is switched off, and none when the record never became visible', async () => {
+    const quick = fakeClock();
+    await createHandlers(memoryProvider(), { settleSeconds: 0, ...quick }).create(authz('example.com'), dns01, 'V');
+    assert.equal(quick.now(), 0);
+
+    const slow = fakeClock();
+    const handlers = createHandlers(memoryProvider({ visibleAfter: Infinity }), { waitSeconds: 10, settleSeconds: 30, ...slow });
+    await assert.rejects(handlers.create(authz('example.com'), dns01, 'V'), /could not be seen within 10 seconds/);
+    assert.ok(slow.now() < 30_000, 'the settle wait is not spent on a record that is not there');
+});
+
+test('explainFailure: only for failures about an old or wrong record', () => {
+    assert.match(explainFailure('During secondary validation: Incorrect TXT record "x" (and 1 more) found at _acme-challenge.a.b'), /Wait two minutes/);
+    assert.match(explainFailure('Incorrect TXT record "x" found at ...'), /older copy/);
+    assert.equal(explainFailure('Cannot issue for "example.com": forbidden by policy'), '');
+    assert.equal(explainFailure(undefined), '');
 });

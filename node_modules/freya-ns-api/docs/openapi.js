@@ -1100,11 +1100,11 @@ const paths = {
             summary: "Test the Let's Encrypt setup against the staging authority",
             description:
                 "Requires the `admin` role. Runs a whole order with the settings of the real certificate (the names, the challenge, the provider) " +
-                "against the STAGING authority of Let's Encrypt, whatever authority is configured for the real certificate, with an account of its own. " +
+                "against the STAGING authority of Let's Encrypt, whatever authority is configured for the real certificate, with a new account for every test (names that an account has proven are not asked again). " +
                 'Nothing is installed and no file of the real certificate is touched; the certificate that staging issues is thrown away. ' +
                 'The answer lists every step that was reached; a failed test ends the list with the reason (it is answered with 200 and `ok: false`, ' +
                 'because the test itself ran). One test runs at a time: a call that comes meanwhile gets the answer of the one that runs. ' +
-                'It can take a minute. The result is remembered as `lastTest` of `GET /certificate`.',
+                'It takes one to two minutes (the settle wait of the DNS challenge is part of it). The result is remembered as `lastTest` of `GET /certificate`.',
             responses: {
                 ...responses({ 200: ok('What the test did', ref('CertificateTest')) }, 403),
                 409: error("HTTPS is not enabled, or the certificate does not come from Let's Encrypt"),

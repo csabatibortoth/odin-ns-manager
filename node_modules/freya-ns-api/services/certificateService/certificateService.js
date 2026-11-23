@@ -185,14 +185,17 @@ function startChallengeServer(tokens) {
 // Places an order for the names of FREYA_HTTPS_DOMAINS and returns { key, cert } (PEM). Nothing is stored here:
 // `directoryUrl` is the authority to ask, `accountFile` where the key of the account is kept, and `onStep(step, detail)`
 // hears what happens (used by the test; the real renewal ignores it).
+// `accountFile: null` uses an account that exists for this order only: the authority remembers which names an account
+// has proven and does not ask again for them, so an account that is used twice would skip the very challenge that a test
+// is meant to try.
 async function placeOrder({ directoryUrl, accountFile, onStep = () => {} }) {
     const acme = require('acme-client');
     const domains = acmeDomains();
 
-    let accountKey = await fs.promises.readFile(accountFile).catch(() => null);
+    let accountKey = accountFile ? await fs.promises.readFile(accountFile).catch(() => null) : null;
     if (!accountKey) {
         accountKey = await acme.crypto.createPrivateEcdsaKey();
-        await writeFile(accountFile, accountKey, 0o600);
+        if (accountFile) await writeFile(accountFile, accountKey, 0o600);
     }
 
     const client = new acme.Client({ directoryUrl, accountKey });
@@ -207,6 +210,7 @@ async function placeOrder({ directoryUrl, accountFile, onStep = () => {} }) {
     const dnsHandlers = plan.needsDns
         ? dnsChallenge.createHandlers(dnsProviders.get(config.acmeDnsProvider), {
               waitSeconds: config.acmeDnsWait,
+              settleSeconds: Math.min(Math.max(config.acmeDnsSettle, 0), 120),
               log: (message) => logService.addInfoLogBasicInfoEntry('ACME ', message),
               onEvent: onStep,
           })
@@ -237,6 +241,10 @@ async function placeOrder({ directoryUrl, accountFile, onStep = () => {} }) {
                 tokens.delete(challenge.token);
             },
         });
+    } catch (err) {
+        // A failure that is about timing says so, and what to do
+        err.message += dnsChallenge.explainFailure(err.message);
+        throw err;
     } finally {
         if (challengeServer) {
             challengeServer.close();
@@ -286,10 +294,9 @@ function test(user) {
         const directory = testDirectoryUrl();
         const result = { ok: false, directory, challenge: { type: config.acmeChallenge, provider: config.acmeChallenge === 'http-01' ? null : config.acmeDnsProvider || null } };
         try {
-            // A folder of its own: the staging account and nothing else
-            const accountFile = path.join(resolve(config.acmeFolder), 'test', new URL(directory).host.replace(/[^a-z0-9.-]/gi, '_'), 'account.key');
-            step('test started', `${acmeDomains().join(', ')} at ${new URL(directory).host}`);
-            await placeOrder({ directoryUrl: directory, accountFile, onStep: (name, detail) => step(name, detail) });
+            // A new account for every test, kept nowhere: names that an account has proven are not asked again
+            step('test started', `${acmeDomains().join(', ')} at ${new URL(directory).host}, with a new account`);
+            await placeOrder({ directoryUrl: directory, accountFile: null, onStep: (name, detail) => step(name, detail) });
             step('certificate issued by the test authority', 'thrown away, not installed');
             result.ok = true;
         } catch (err) {

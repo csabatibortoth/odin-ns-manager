@@ -22,6 +22,7 @@ Object.assign(process.env, {
     FREYA_ACME_CHALLENGE: 'dns-01',
     FREYA_ACME_DNS_PROVIDER: 'zones',
     FREYA_ACME_DNS_WAIT: '5',
+    FREYA_ACME_DNS_SETTLE: '0', // the settle wait is tested with a fake clock in dnsChallenge.test.js
     FREYA_ACME_FOLDER: folder,
     FREYA_ACME_HTTP_PORT: '1', // never opened with dns-01
     FREYA_LOGGING_ENABLED: 'false',
@@ -141,6 +142,7 @@ withDb('a passing test: the steps, the staging authority, nothing installed, not
     const testOrder = orders.at(-1);
     assert.equal(testOrder.directoryUrl, acme.directory.letsencrypt.staging);
     assert.notEqual(testOrder.accountKey, realOrder.accountKey);
+    assert.equal(fs.existsSync(path.join(folder, 'test')), false, 'the account of a test is kept nowhere');
     // nothing of the real certificate changed: same files, same certificate served, no record left
     assert.deepEqual(snapshot(), before);
     assert.equal(service.status().certificate.fingerprint256, fingerprint);
@@ -166,6 +168,15 @@ withDb('a failing test: the reason ends the steps, no record is left, the real c
     // a failed test is not a failed renewal
     assert.equal(service.status().lastError, null);
     assert.equal(service.status().lastTest.ok, false);
+});
+
+withDb('every test uses a new account: names that an account has proven are not asked again, so a reused account would skip the challenge', async () => {
+    mode = 'ok';
+    await service.test({ username: 'a' });
+    await service.test({ username: 'a' });
+    const [first, second] = orders.slice(-2);
+    assert.equal(first.directoryUrl, acme.directory.letsencrypt.staging);
+    assert.notEqual(first.accountKey, second.accountKey);
 });
 
 withDb('two tests at once share one order', async () => {

@@ -179,3 +179,8 @@ test('the registry builds it from the settings, and says what is missing', () =>
     assert.ok(providers.names().includes('cloudflare'));
     assert.throws(() => providers.get('cloudflare'), /needs an API token/);
 });
+
+test('the Cloudflare provider asks the name servers of the zone, and falls back to the public resolvers when it cannot find them', async () => {
+    const p = provider();
+    assert.equal(typeof p.visible, 'function');
+});

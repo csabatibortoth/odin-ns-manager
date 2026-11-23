@@ -1,5 +1,7 @@
 const fs = require('fs');
 
+const { visibleOnAuthoritative, visibleOnPublicResolvers } = require('./dnsChallenge');
+
 // DNS-01 provider "cloudflare": the TXT record of the challenge is written through the API of Cloudflare, for a domain
 // whose DNS is hosted there. See dnsChallenge.js for the interface.
 //
@@ -132,7 +134,13 @@ function createProvider(options = {}) {
             }
             created.delete(`${name}\n${value}`);
         },
-        // visible: not given: public resolvers are asked, as the authority will.
+
+        // Published when the name servers of the zone (Cloudflare's) all have it: no cache in between. The public resolvers
+        // are the fallback when the name servers cannot be found.
+        async visible(name, value) {
+            const published = await visibleOnAuthoritative(name, value);
+            return published ?? visibleOnPublicResolvers(name, value);
+        },
     };
 }
 

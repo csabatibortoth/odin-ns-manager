@@ -23,6 +23,7 @@ Object.assign(process.env, {
     FREYA_ACME_CHALLENGE: 'dns-01',
     FREYA_ACME_DNS_PROVIDER: 'zones',
     FREYA_ACME_DNS_WAIT: '5',
+    FREYA_ACME_DNS_SETTLE: '0', // the settle wait is tested with a fake clock in dnsChallenge.test.js
     FREYA_ACME_FOLDER: folder,
     FREYA_ACME_HTTP_PORT: '1', // must never be opened with dns-01
     FREYA_LOGGING_ENABLED: 'false',
@@ -75,6 +76,7 @@ test.before(async () => {
                 for (const [challenge, value] of challenges) await options.challengeCreateFn(authz, challenge, value);
                 seen.push((await Record.find({ transient: true }).lean()).map((r) => r.data.target).sort());
                 if (mode === 'fail') throw new Error('the authority said invalid');
+                if (mode === 'stale') throw new Error('During secondary validation: Incorrect TXT record "abc" (and 1 more) found at _acme-challenge.example.com');
             } catch (err) {
                 // auto mode removes what it created, also after a failure, and does not let an error of it stop the rest
                 for (const [challenge, value] of challenges) await options.challengeRemoveFn(authz, challenge, value).catch(() => {});
@@ -121,4 +123,16 @@ withDb('an unknown provider fails before anything is requested', async () => {
     // not through the environment (read once): the registry is what obtain() asks
     const providers = require('../services/certificateService/dnsProviders');
     assert.throws(() => providers.get('route53'), /not known.*zones/);
+});
+
+withDb('a validation that failed on an old record says so and what to do; a failure of another kind does not', async () => {
+    mode = 'stale';
+    const stale = await service.renew().catch((e) => e);
+    assert.match(stale.message, /During secondary validation: Incorrect TXT record/);
+    assert.match(stale.message, /may still hold an older copy.*Wait two minutes/);
+    assert.equal(await Record.countDocuments({ transient: true }), 0);
+
+    mode = 'fail';
+    const other = await service.renew().catch((e) => e);
+    assert.equal(other.message, 'the authority said invalid');
 });

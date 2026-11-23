@@ -95,6 +95,7 @@ environment variable, so secrets do not have to be stored in the file.
 | `FREYA_ACME_CLOUDFLARE_TOKEN` / `FREYA_ACME_CLOUDFLARE_TOKEN_FILE` | – | `cloudflare`: an API token limited to one zone, or a file whose first line is the token (preferred: the file can be mode 600) |
 | `FREYA_ACME_CLOUDFLARE_ZONE_ID` | – | `cloudflare`: optional; without it the zone is found by name (the token then also needs `Zone: Read`) |
 | `FREYA_ACME_DNS_WAIT` | `120` | `dns-01`: seconds to wait until the record is answered, before the authority is asked |
+| `FREYA_ACME_DNS_SETTLE` | `60` | `dns-01`: seconds to wait after the record is visible, before the authority is asked (0 to 120; 0 switches it off) |
 | `FREYA_ACME_FOLDER` | `sslcert/letsencrypt` | `letsencrypt`: where the account key, the private key and the certificate are kept |
 | `FREYA_HTTPS_KEY` / `FREYA_HTTPS_CERT` | `sslcert/server.key` / `sslcert/server.crt` | `custom`: the private key and the certificate, in PEM. The certificate may be followed by its chain |
 | `FREYA_HTTPS_KEY_PASSPHRASE` | – | `custom`: the passphrase of the private key, when it is encrypted |
@@ -236,6 +237,11 @@ FREYA_HTTPS_DOMAINS=example.com,*.example.com
   FREYA_ACME_DELEGATION_ZONE=acme.example.net
   FREYA_HTTPS_DOMAINS=example.com,*.example.com
   ```
+- The record counts as visible when a public resolver has it (the Cloudflare provider asks the zone's own name servers instead:
+  all that answer must have it); then `FREYA_ACME_DNS_SETTLE` seconds pass before the authority is asked, because it validates from several
+  places with caches of their own. If a validation server still saw an older record, the error says so: wait two minutes (the
+  challenge records live 60 seconds) before the next order for the same name; failed validations count against the limits of
+  the authority.
 - Try it with `FREYA_ACME_DIRECTORY=staging` first, or with the test below.
 
 The record of the provider `zones` is served by the name server that shares the database: the
@@ -246,7 +252,8 @@ management API alone does not answer DNS queries. Odin does both.
 `POST /api/certificate/test` (admin) runs a whole order with the settings of
 the real certificate (the names, the challenge, the provider) against the
 **staging** authority of Let's Encrypt, even when the real certificate comes
-from production, and with an account of its own. Nothing is installed, no file
+from production, and with a new account for every test (the authority does not ask again for names that an account has proven, so a reused
+account would skip the very challenge that is being tried). Nothing is installed, no file
 of the real certificate is touched, and the certificate that staging issues is
 thrown away. The answer lists every step that was reached (`order placed`,
 `record written`, `record visible`, `record removed`, `authority validated the
@@ -991,6 +998,17 @@ download that fails is written to the error log.
 | `model/mongoDB/` | Database connection and data models |
 
 ## Release notes
+
+### 2.5.1
+
+Found by the first real order against the staging authority (Cloudflare, a wildcard and its base name): one of three orders failed
+with `During secondary validation: Incorrect TXT record ... (and 1 more)`, close to the previous order for the same name. The
+cause was not proven (the authority validates from several places with caches of their own). What changed:
+
+- **The test uses a new account every time.** The authority remembers which names an account has proven and does not ask again, so a repeated test with the same account passed without trying DNS at all (it would have passed with a revoked token). It is a throwaway account now, kept nowhere.
+- **The Cloudflare provider asks the zone's own name servers** whether the record is published (no cache in between); the public resolvers are the fallback. (A first idea, requiring every public resolver to agree, made a real order wait a minute longer for the negative answers that the polling had put into those caches, and was dropped.)
+- **`FREYA_ACME_DNS_SETTLE`** (default 60 seconds, 0 switches it off): a wait after the record is visible, before the authority is asked. The authority validates from other places than this server, and a Cloudflare node there can still serve the previous order's removed records for up to about a minute. Measured against the staging authority with the Cloudflare provider: with 10 seconds, two orders for the same name in a row failed; with 60 seconds, a startup order and three tests in a row all passed. The test shows the wait as the step `settled`.
+- **A clearer error** for that kind of failure: it says that an older record may still be cached and to wait two minutes. No automatic retry: failed validations count against the limits of the authority.
 
 ### 2.5.0
 
