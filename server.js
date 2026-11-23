@@ -9,6 +9,7 @@ const searchService = require('./services/serverService/searchService');
 const statusService = require('./services/serverService/statusService');
 const zoneService = require('./services/serverService/zoneService');
 const syncService = require('./services/serverService/syncService');
+const certificateWatch = require('./services/serverService/certificateWatch');
 const pluginService = require('./services/pluginService/pluginService');
 
 const nameServer = named.createServer({ name: config.serverName });
@@ -101,6 +102,8 @@ async function main() {
             if (config.uiEnabled) console.log('User interface is at the address above');
             const running = await pluginService.start();
             if (config.pluginsEnabled.length) console.log('%d of %d plugin(s) are running', running, config.pluginsEnabled.length);
+            // A mail when the certificate of HTTPS can not be renewed, or is about to expire
+            certificateWatch.start();
             // A secondary copies what the primary has; the DNS server picks it up like any other change
             syncService.start((result) => {
                 zoneService.refresh();
@@ -123,6 +126,7 @@ async function main() {
         blockService.stop();
         statusService.stop();
         syncService.stop();
+        certificateWatch.stop();
         await pluginService.stop().catch(() => {});
         await queryLogService.stop().catch(() => {});
         await stopApi().catch(() => {});
