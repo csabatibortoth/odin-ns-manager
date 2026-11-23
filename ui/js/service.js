@@ -160,7 +160,7 @@ function testCard(result) {
 // Runs the whole order against the staging authority of Let's Encrypt and shows the steps in $result
 function testButton($result, refresh) {
     return button("Test with Let's Encrypt staging", async () => {
-        $result.empty().append(el('p', { class: 'muted', text: 'Running the test against the staging authority. It can take a minute.' }));
+        $result.empty().append(el('p', { class: 'muted', text: 'Running the test against the staging authority. It can take two minutes.' }));
         try {
             const result = await api('POST', '/certificate/test');
             $result.empty().append(testCard(result));

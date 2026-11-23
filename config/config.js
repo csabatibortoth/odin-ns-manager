@@ -180,6 +180,10 @@ const SETTINGS = [
         check: (value) => !value || /^[A-Za-z0-9]+$/.test(value) || 'letters and digits only',
     },
     {
+        group: 'HTTPS certificate', key: 'acmeDnsSettle', env: 'ODIN_ACME_DNS_SETTLE', type: 'int', fallback: 60, label: "Let's Encrypt, DNS challenge: seconds to wait after the record is visible", min: 0, max: 120,
+        hint: 'The authority validates from other places, and a DNS node there can serve the previous order\'s removed records for up to a minute. 0 switches the wait off.',
+    },
+    {
         group: 'HTTPS certificate', key: 'acmeDnsWait', env: 'ODIN_ACME_DNS_WAIT', type: 'int', fallback: 120, label: "Let's Encrypt, DNS challenge: seconds to wait for the record", min: 10, max: 1800,
     },
     {

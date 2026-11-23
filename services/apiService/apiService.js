@@ -48,6 +48,7 @@ const FREYA_ENV = {
     FREYA_ACME_CHALLENGE: config.acmeChallenge,
     FREYA_ACME_DNS_PROVIDER: config.acmeDnsProvider,
     FREYA_ACME_DNS_WAIT: config.acmeDnsWait,
+    FREYA_ACME_DNS_SETTLE: config.acmeDnsSettle,
     FREYA_ACME_DELEGATION_ZONE: config.acmeDelegationZone,
     FREYA_ACME_CLOUDFLARE_TOKEN: config.acmeCloudflareToken,
     FREYA_ACME_CLOUDFLARE_TOKEN_FILE: config.acmeCloudflareTokenFile,

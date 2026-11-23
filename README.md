@@ -231,7 +231,7 @@ environment variable, what was saved in the browser, its default.
 | `ODIN_ACME_DNS_PROVIDER` | `zones` | `dns-01`: where the record is written: `zones` (a zone of this server), `delegation` (a CNAME at any DNS to a zone of this server), `cloudflare` |
 | `ODIN_ACME_DELEGATION_ZONE` | – | `delegation`: a zone hosted on this server, e.g. `acme.example.net` |
 | `ODIN_ACME_CLOUDFLARE_TOKEN` / `ODIN_ACME_CLOUDFLARE_TOKEN_FILE` / `ODIN_ACME_CLOUDFLARE_ZONE_ID` | – | `cloudflare`: an API token limited to one zone (`Zone: DNS: Edit`, `Zone: Zone: Read`), or a file whose first line is the token (only from the environment); the zone id is optional |
-| `ODIN_ACME_DNS_WAIT` | `120` | `dns-01`: seconds to wait until the record is answered |
+| `ODIN_ACME_DNS_WAIT` / `ODIN_ACME_DNS_SETTLE` | `120` / `60` | `dns-01`: seconds to wait until the record is answered, and then the seconds to wait before the authority is asked (0 switches it off; needs freya-ns-api 2.5.1) |
 | `ODIN_DOCS_ENABLED` | `true` | The Swagger UI of the API at `/api/docs` |
 | `ODIN_MONITORING_ROLES` | `admin` | Roles that may read the query log, the clients and the metrics |
 | `ODIN_AUTH_ENABLED` | `true` | Set to `false` to skip token checks. For local development only |
