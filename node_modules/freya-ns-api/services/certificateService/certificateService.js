@@ -7,6 +7,9 @@ const cron = require('node-cron');
 const config = require('../../config/config');
 const HttpError = require('../httpError');
 const logService = require('../logService/logService');
+const dnsChallenge = require('./dnsChallenge');
+const dnsProviders = require('./dnsProviders');
+const delegationProvider = require('./delegationProvider');
 
 // The certificate of the HTTPS listener. It comes from one of two sources:
 //   letsencrypt - requested from Let's Encrypt (or another ACME directory) and renewed by the server itself;
@@ -23,7 +26,8 @@ const DAY = 24 * 60 * 60 * 1000;
 const RENEW_DAYS_BEFORE = 30;
 // After a renewal that failed, the next one is not tried sooner than this: the limits of Let's Encrypt are strict.
 const RETRY_AFTER = 6 * 60 * 60 * 1000;
-const HOST_NAME = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/;
+// A wildcard (*.example.com) is accepted only when the names are proven through DNS.
+const HOST_NAME = /^(?=.{1,253}$)(\*\.)?([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/;
 
 const source = config.httpsCertSource;
 const resolve = (file) => path.resolve(ROOT, file);
@@ -41,7 +45,11 @@ const validFrom = (x509) => new Date(x509.validFrom);
 const validTo = (x509) => new Date(x509.validTo);
 const expired = (x509) => validTo(x509) <= Date.now();
 const daysLeft = (x509) => Math.floor((validTo(x509) - Date.now()) / DAY);
-const covers = (x509, domains) => domains.every((domain) => x509.checkHost(domain) !== undefined);
+// A wildcard name is compared as written with the names of the certificate: it is not a host that can be checked.
+const covers = (x509, domains) => {
+    const names = (x509.subjectAltName || '').split(', ').map((name) => name.replace(/^DNS:/, '').toLowerCase());
+    return domains.every((domain) => (dnsChallenge.isWildcard(domain) ? names.includes(domain) : x509.checkHost(domain) !== undefined));
+};
 
 // Checks a certificate (optionally followed by its chain) and its private key, both in PEM,
 // and returns the certificate itself.
@@ -132,10 +140,12 @@ function acmeDomains() {
     const invalid = domains.filter((domain) => !HOST_NAME.test(domain));
     if (invalid.length) {
         throw new Error(
-            `FREYA_HTTPS_DOMAINS holds a name Let's Encrypt cannot check over HTTP: ${invalid.join(', ')}. ` +
-                'Only full public host names are possible: no wildcards, no IP addresses.'
+            `FREYA_HTTPS_DOMAINS holds a name Let's Encrypt cannot check: ${invalid.join(', ')}. ` +
+                'Only full public host names are possible (and wildcards like *.example.com with the dns-01 challenge): no IP addresses.'
         );
     }
+    // Throws when a wildcard is combined with http-01, or the mode is unknown.
+    dnsChallenge.planFor(config.acmeChallenge, domains);
     return domains;
 }
 
@@ -190,29 +200,46 @@ async function obtain() {
         await acme.crypto.createPrivateEcdsaKey()
     );
 
+    const plan = dnsChallenge.planFor(config.acmeChallenge, domains);
+    // Fails before anything is requested when the provider is missing or unknown.
+    const dnsHandlers = plan.needsDns
+        ? dnsChallenge.createHandlers(dnsProviders.get(config.acmeDnsProvider), {
+              waitSeconds: config.acmeDnsWait,
+              log: (message) => logService.addInfoLogBasicInfoEntry('ACME ', message),
+          })
+        : null;
+
     const tokens = new Map();
-    const challengeServer = await startChallengeServer(tokens);
+    // Port 80 is opened only when a name is proven over HTTP.
+    const challengeServer = plan.needsHttp ? await startChallengeServer(tokens) : null;
     let cert;
     try {
         cert = await client.auto({
             csr,
             email: config.acmeEmail || undefined,
             termsOfServiceAgreed: true,
-            challengePriority: ['http-01'],
+            challengePriority: plan.priority,
             // The library would first ask for the token itself, which fails behind a router that
             // does not lead the public address back inside. The authority is the one that has to see it.
             skipChallengeVerification: true,
             challengeCreateFn: async (authz, challenge, keyAuthorization) => {
-                if (challenge.type !== 'http-01') throw new Error(`Only the http-01 challenge is supported, not ${challenge.type}`);
+                if (challenge.type === 'dns-01' && dnsHandlers) return dnsHandlers.create(authz, challenge, keyAuthorization);
+                if (challenge.type !== 'http-01' || !challengeServer) throw new Error(`The ${challenge.type} challenge is not enabled`);
                 tokens.set(challenge.token, keyAuthorization);
             },
-            challengeRemoveFn: async (authz, challenge) => {
+            challengeRemoveFn: async (authz, challenge, keyAuthorization) => {
+                if (challenge.type === 'dns-01' && dnsHandlers) return dnsHandlers.remove(authz, challenge, keyAuthorization);
                 tokens.delete(challenge.token);
             },
         });
     } finally {
-        challengeServer.close();
-        challengeServer.closeAllConnections();
+        if (challengeServer) {
+            challengeServer.close();
+            challengeServer.closeAllConnections();
+        }
+        // A failed order must not leave a challenge record behind.
+        const left = dnsHandlers ? await dnsHandlers.cleanup() : [];
+        if (left.length) logService.addErrorLogErrorEntry('Challenge records could not be removed: ', left.join('; '));
     }
 
     await writePair(files.key, files.cert, key, cert);
@@ -260,6 +287,10 @@ function apply(next) {
 async function load() {
     if (!SOURCES.includes(source)) {
         throw new Error(`FREYA_HTTPS_CERT_SOURCE must be one of ${SOURCES.join(', ')}: ${source}`);
+    }
+    if (source === 'letsencrypt') {
+        // A challenge record that a crash left behind; the database is connected before the certificate is loaded.
+        await dnsProviders.removeLeftovers().catch((err) => console.error(`Old challenge records could not be removed: ${err.message}`));
     }
     active = source === 'custom' ? await readCustom() : await loadLetsEncrypt();
     if (expired(active.x509)) {
@@ -320,6 +351,17 @@ function startSchedule() {
 
 const oneLine = (name) => name.split('\n').filter(Boolean).join(', ');
 
+function challengeStatus() {
+    const type = config.acmeChallenge;
+    const provider = type === 'http-01' ? null : config.acmeDnsProvider || null;
+    let recordsToAdd = [];
+    if (provider === 'delegation' && config.acmeDelegationZone) {
+        const wanted = config.httpsDomains.map((domain) => delegationProvider.recordToAdd(domain, config.acmeDelegationZone));
+        recordsToAdd = [...new Map(wanted.map((record) => [record.name, record])).values()];
+    }
+    return { type, provider, recordsToAdd };
+}
+
 function status() {
     const x509 = active?.x509;
     return {
@@ -342,6 +384,8 @@ function status() {
                   fingerprint256: x509.fingerprint256,
               }
             : null,
+        // What the owner of the names has to know: how they are proven, and the records to add at the real DNS.
+        challenge: source === 'letsencrypt' ? challengeStatus() : null,
         lastCheckAt: state.lastCheckAt,
         lastError: state.lastError,
     };

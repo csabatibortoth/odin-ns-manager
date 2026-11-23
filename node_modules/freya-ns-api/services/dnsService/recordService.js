@@ -61,7 +61,7 @@ async function save(record) {
 async function listRecords(zoneId, query = {}) {
     const zone = await loadZone(zoneId);
 
-    const filter = { zone: zone ? zone._id : null };
+    const filter = { zone: zone ? zone._id : null, transient: { $ne: true } };
     if (query.type !== undefined) filter.type = dnsData.parseType(query.type);
     if (query.name !== undefined) filter.name = parseName(query.name, zone);
     if (query.active !== undefined) filter.active = parseBoolean(query.active, 'active');

@@ -1,11 +1,12 @@
 {
   "name": "freya-ns-api",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "description": "",
   "main": "api.js",
   "scripts": {
     "start": "node api.js",
-    "dev": "nodemon api.js"
+    "dev": "nodemon api.js",
+    "test": "node --test \"test/*.test.js\""
   },
   "repository": {
     "type": "git",

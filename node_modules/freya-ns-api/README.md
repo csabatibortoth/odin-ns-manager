@@ -1,6 +1,6 @@
 # freya-ns-api
 
-Management API for the Freya DNS server, version 2.3.1. It is the administrative
+Management API for the Freya DNS server, version 2.4.0. It is the administrative
 side of the name server: the place where the people who run it are managed,
 where the zones and records it serves and the domains it blocks are managed, and
 where what it did can be looked up.
@@ -89,6 +89,12 @@ environment variable, so secrets do not have to be stored in the file.
 | `FREYA_ACME_EMAIL` | – | `letsencrypt`: an address for the account at the certificate authority. Optional |
 | `FREYA_ACME_DIRECTORY` | `production` | `letsencrypt`: `production`, `staging`, or the directory URL of another ACME certificate authority |
 | `FREYA_ACME_HTTP_PORT` | `80` | `letsencrypt`: the port that answers the challenge of the certificate authority |
+| `FREYA_ACME_CHALLENGE` | `http-01` | `letsencrypt`: how the names are proven: `http-01`, `dns-01`, or `auto` (dns-01 for a wildcard name, http-01 for the rest). See [DNS validation](#dns-validation-dns-01) |
+| `FREYA_ACME_DNS_PROVIDER` | – | `dns-01`: where the TXT record is written. `zones`: the zones of this server; `cloudflare`: the DNS of a domain hosted at Cloudflare; `delegation`: any DNS, through one CNAME per name |
+| `FREYA_ACME_DELEGATION_ZONE` | – | `delegation`: a zone hosted on this server, e.g. `acme.example.net`, that the challenge names point to |
+| `FREYA_ACME_CLOUDFLARE_TOKEN` / `FREYA_ACME_CLOUDFLARE_TOKEN_FILE` | – | `cloudflare`: an API token limited to one zone, or a file whose first line is the token (preferred: the file can be mode 600) |
+| `FREYA_ACME_CLOUDFLARE_ZONE_ID` | – | `cloudflare`: optional; without it the zone is found by name (the token then also needs `Zone: Read`) |
+| `FREYA_ACME_DNS_WAIT` | `120` | `dns-01`: seconds to wait until the record is answered, before the authority is asked |
 | `FREYA_ACME_FOLDER` | `sslcert/letsencrypt` | `letsencrypt`: where the account key, the private key and the certificate are kept |
 | `FREYA_HTTPS_KEY` / `FREYA_HTTPS_CERT` | `sslcert/server.key` / `sslcert/server.crt` | `custom`: the private key and the certificate, in PEM. The certificate may be followed by its chain |
 | `FREYA_HTTPS_KEY_PASSPHRASE` | – | `custom`: the passphrase of the private key, when it is encrypted |
@@ -129,7 +135,8 @@ FREYA_ACME_EMAIL=admin@example.com      # optional
 What it takes:
 
 - Every name in `FREYA_HTTPS_DOMAINS` must lead to this server in the public
-  DNS. Wildcards and IP addresses are not possible.
+  DNS. IP addresses are not possible, and wildcards only with the
+  [DNS validation](#dns-validation-dns-01) below.
 - **Port 80 must reach this server from the internet.** Let's Encrypt checks
   each name by asking for a token over plain HTTP on port 80. The server
   answers on `FREYA_ACME_HTTP_PORT`, only while a certificate is being
@@ -152,6 +159,87 @@ again on the next start. Keep that folder private and out of version control;
 When the first certificate cannot be obtained, the server does not start, and
 says why. A renewal that fails is written to the error log and tried again
 after six hours; the certificate that is there keeps being served.
+
+#### DNS validation (dns-01)
+
+Instead of port 80, the authority looks for a TXT record at
+`_acme-challenge.<name>`. That works for wildcard names (`*.example.com`), for
+a server that cannot be reached on port 80, and it needs no free port during
+issue and renewal. Nothing changes until `FREYA_ACME_CHALLENGE` is set:
+`http-01` stays the default.
+
+```
+FREYA_ACME_CHALLENGE=dns-01             # or auto
+FREYA_ACME_DNS_PROVIDER=zones
+FREYA_HTTPS_DOMAINS=example.com,*.example.com
+```
+
+- `dns-01`: every name is proven through DNS; port 80 is never opened.
+  `auto`: a wildcard name through DNS, the other names over HTTP.
+- A wildcard and its base name (`*.example.com` and `example.com`) need two
+  values at the same record name; both are written, and each is removed alone.
+- The record is written, and the authority is asked only when it is really
+  answered; after `FREYA_ACME_DNS_WAIT` seconds without that, the order is
+  given up with a clear error. The record is removed afterwards, also when the
+  order fails.
+- Provider `zones`: the name must belong to an active zone of this server
+  (the longest matching zone is used). No account and no credentials. The
+  provider can create and delete one kind of record only: a TXT record named
+  `_acme-challenge.*`, marked transient. A transient record is answered by the
+  name server, left out of the record lists, the export and the backup, does
+  not raise the serial of the zone, and is deleted when the server starts.
+- **Only this server has the record.** It is not copied to secondaries (they
+  copy on a schedule, and a transient record is not exported). A certificate
+  authority asks the public name servers of the zone: when a secondary is one
+  of them, it can ask a server that does not know the record, and the check
+  fails. Use this provider when this server is the one that answers for the
+  names it certifies.
+- Provider `cloudflare`: for a domain whose DNS is at Cloudflare. Create an
+  API token (Cloudflare dashboard, My Profile, API Tokens) with the permissions
+  `Zone: DNS: Edit` and `Zone: Zone: Read`, limited to the one zone. Never the
+  global API key. Put it in a file that only the server can read and set
+  `FREYA_ACME_CLOUDFLARE_TOKEN_FILE`. The token is sent only to
+  `api.cloudflare.com` over HTTPS, never written to a log or an error. Only
+  TXT records named `_acme-challenge.*` are created, and only a record with
+  exactly the value written is removed. The name must belong to a zone of the
+  account. Whether the proxy (orange cloud) is on does not matter: TXT records
+  are not proxied. The authority is asked after the record is visible to
+  public resolvers.
+
+  ```
+  FREYA_ACME_CHALLENGE=dns-01
+  FREYA_ACME_DNS_PROVIDER=cloudflare
+  FREYA_ACME_CLOUDFLARE_TOKEN_FILE=/etc/freya/cloudflare.token
+  FREYA_HTTPS_DOMAINS=example.com,*.example.com
+  ```
+- Provider `delegation`: for a domain whose DNS is anywhere else (a registrar,
+  any DNS host), with no API and no key of that provider. Host a zone on this
+  server, e.g. `acme.example.net`, and make this server its public name server
+  (NS record at the parent). Then the owner of each domain adds ONE record at
+  the real DNS, once:
+
+  ```
+  _acme-challenge.example.com   CNAME   _acme-challenge.example.com.acme.example.net
+  ```
+
+  The certificate authority follows the CNAME and finds the TXT record, which
+  this server writes into `acme.example.net` (through the provider `zones`).
+  A wildcard counts as its base name: `*.example.com` and `example.com` use the
+  same CNAME. The key of the real domain never reaches this machine. The status
+  of the certificate (`challenge.recordsToAdd`) lists the exact records to add
+  for `FREYA_HTTPS_DOMAINS`, and a failed wait says which one is missing:
+  the CNAME, or the answer of this server.
+
+  ```
+  FREYA_ACME_CHALLENGE=dns-01
+  FREYA_ACME_DNS_PROVIDER=delegation
+  FREYA_ACME_DELEGATION_ZONE=acme.example.net
+  FREYA_HTTPS_DOMAINS=example.com,*.example.com
+  ```
+- Try it with `FREYA_ACME_DIRECTORY=staging` first.
+
+The record of the provider `zones` is served by the name server that shares the database: the
+management API alone does not answer DNS queries. Odin does both.
 
 ### Custom certificate
 
@@ -202,10 +290,14 @@ It can be replaced while the server runs, in two ways:
     "serialNumber": "05A1...",
     "fingerprint256": "68:7B:A8:..."
   },
+  "challenge": { "type": "http-01", "provider": null, "recordsToAdd": [] },
   "lastCheckAt": "2026-11-13T10:23:00.000Z",
   "lastError": null
 }
 ```
+
+`challenge` tells how the names are proven; with the provider `delegation`,
+`recordsToAdd` lists the CNAME records to add at the real DNS.
 
 The private key is never part of an answer. `PUT /certificate` answers 409
 when the source is `letsencrypt`, and 400 for a certificate that is expired or
@@ -883,6 +975,29 @@ download that fails is written to the error log.
 | `model/mongoDB/` | Database connection and data models |
 
 ## Release notes
+
+### 2.4.0
+
+New in this release:
+
+- **Let's Encrypt with DNS validation**: `FREYA_ACME_CHALLENGE=dns-01` (or
+  `auto`) proves the names through a TXT record instead of port 80, which also
+  makes wildcard names possible. With the provider `zones`
+  (`FREYA_ACME_DNS_PROVIDER=zones`) a name that belongs to a zone of this
+  server is validated without any account. Nothing changes by default
+  (`http-01`). See [DNS validation](#dns-validation-dns-01).
+- **Cloudflare provider**: `FREYA_ACME_DNS_PROVIDER=cloudflare` writes the
+  challenge record through the API of Cloudflare, for domains whose DNS is
+  hosted there. The provider interface is small (`create`, `remove`,
+  `visible`), so others can follow.
+- **CNAME delegation**: `FREYA_ACME_DNS_PROVIDER=delegation` works with any
+  DNS host: one CNAME per name at the real DNS points to a zone of this server,
+  which answers the challenge. The status lists the records to add.
+- **Transient records**: a record the server makes for itself. It is answered,
+  but hidden from the record lists, the export and the backup, and deleted at
+  start.
+- `npm test` runs the tests (some need a MongoDB on 127.0.0.1, or
+  `FREYA_TEST_MONGO`; without one they are skipped).
 
 ### 2.3.1
 

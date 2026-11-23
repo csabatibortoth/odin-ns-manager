@@ -451,6 +451,27 @@ const schemas = {
                     fingerprint256: { type: 'string', description: 'The SHA-256 fingerprint' },
                 },
             },
+            challenge: {
+                type: 'object',
+                nullable: true,
+                description: "How the names are proven to Let's Encrypt. `null` for a custom certificate",
+                properties: {
+                    type: { type: 'string', enum: ['http-01', 'dns-01', 'auto'] },
+                    provider: { type: 'string', nullable: true, example: 'delegation', description: 'dns-01: where the TXT record is written (`zones`, `cloudflare`, `delegation`). `null` for http-01' },
+                    recordsToAdd: {
+                        type: 'array',
+                        description: 'Provider `delegation`: the records the owner of each name adds, once, at the real DNS. Empty for the others',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                type: { type: 'string', example: 'CNAME' },
+                                name: { type: 'string', example: '_acme-challenge.example.com' },
+                                target: { type: 'string', example: '_acme-challenge.example.com.acme.example.net' },
+                            },
+                        },
+                    },
+                },
+            },
             lastCheckAt: { type: 'string', format: 'date-time', nullable: true, description: 'When a renewal was last considered or tried' },
             lastError: { type: 'string', nullable: true, description: 'Why the last renewal failed. `null` after one that succeeded' },
         },

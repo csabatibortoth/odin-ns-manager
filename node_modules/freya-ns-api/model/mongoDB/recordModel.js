@@ -14,6 +14,9 @@ const recordSchema = new mongoose.Schema(
         data: { type: mongoose.Schema.Types.Mixed, required: true },
         // An inactive record is kept, but must not be served.
         active: { type: Boolean, default: true },
+        // A record the server made for itself (the challenge of Let's Encrypt): served, but hidden from the lists, the export
+        // and the backup, and deleted when the server starts.
+        transient: { type: Boolean, default: false },
     },
     { timestamps: true, minimize: false }
 );
