@@ -236,10 +236,25 @@ FREYA_HTTPS_DOMAINS=example.com,*.example.com
   FREYA_ACME_DELEGATION_ZONE=acme.example.net
   FREYA_HTTPS_DOMAINS=example.com,*.example.com
   ```
-- Try it with `FREYA_ACME_DIRECTORY=staging` first.
+- Try it with `FREYA_ACME_DIRECTORY=staging` first, or with the test below.
 
 The record of the provider `zones` is served by the name server that shares the database: the
 management API alone does not answer DNS queries. Odin does both.
+
+#### Test the setup
+
+`POST /api/certificate/test` (admin) runs a whole order with the settings of
+the real certificate (the names, the challenge, the provider) against the
+**staging** authority of Let's Encrypt, even when the real certificate comes
+from production, and with an account of its own. Nothing is installed, no file
+of the real certificate is touched, and the certificate that staging issues is
+thrown away. The answer lists every step that was reached (`order placed`,
+`record written`, `record visible`, `record removed`, `authority validated the
+names`, ...); a failed test ends the list with the reason. Use it after changing
+the names, the challenge or the provider, and before the first real order. One
+test runs at a time; the result is remembered as `lastTest` in the certificate
+status. A directory that you configured on purpose (not `production`) is used
+as it is.
 
 ### Custom certificate
 
@@ -273,6 +288,7 @@ It can be replaced while the server runs, in two ways:
 | GET | `/certificate` | admin | The source, and the certificate that is served |
 | PUT | `/certificate` | admin | Replace the custom certificate: `{ certificate, privateKey }`, both in PEM |
 | POST | `/certificate/renew` | admin | Let's Encrypt: request a new certificate now. Custom: read the files again |
+| POST | `/certificate/test` | admin | Let's Encrypt: run a whole order against the staging authority and list the steps. Installs nothing |
 
 ```
 {
@@ -975,6 +991,15 @@ download that fails is written to the error log.
 | `model/mongoDB/` | Database connection and data models |
 
 ## Release notes
+
+### 2.5.0
+
+New in this release:
+
+- **Test the Let's Encrypt setup**: `POST /api/certificate/test` runs a whole
+  order against the staging authority with the real settings, lists every step,
+  and installs nothing. The result is `lastTest` in the certificate status.
+  See [Test the setup](#test-the-setup).
 
 ### 2.4.0
 

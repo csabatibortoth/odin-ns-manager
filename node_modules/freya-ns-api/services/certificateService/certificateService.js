@@ -37,7 +37,7 @@ const passphrase = () => (source === 'custom' && config.httpsKeyPassphrase) || u
 let active = null;
 let tlsServer = null;
 let renewing = null;
-const state = { lastCheckAt: null, lastError: null, lastFailureAt: 0 };
+const state = { lastCheckAt: null, lastError: null, lastFailureAt: 0, lastTest: null };
 
 // ---- reading and checking ------------------------------------------------------------------------------
 
@@ -182,18 +182,20 @@ function startChallengeServer(tokens) {
     });
 }
 
-async function obtain() {
+// Places an order for the names of FREYA_HTTPS_DOMAINS and returns { key, cert } (PEM). Nothing is stored here:
+// `directoryUrl` is the authority to ask, `accountFile` where the key of the account is kept, and `onStep(step, detail)`
+// hears what happens (used by the test; the real renewal ignores it).
+async function placeOrder({ directoryUrl, accountFile, onStep = () => {} }) {
     const acme = require('acme-client');
     const domains = acmeDomains();
-    const files = acmeFiles();
 
-    let accountKey = await fs.promises.readFile(files.account).catch(() => null);
+    let accountKey = await fs.promises.readFile(accountFile).catch(() => null);
     if (!accountKey) {
         accountKey = await acme.crypto.createPrivateEcdsaKey();
-        await writeFile(files.account, accountKey, 0o600);
+        await writeFile(accountFile, accountKey, 0o600);
     }
 
-    const client = new acme.Client({ directoryUrl: acmeDirectoryUrl(), accountKey });
+    const client = new acme.Client({ directoryUrl, accountKey });
     // A new key with every certificate.
     const [key, csr] = await acme.crypto.createCsr(
         { commonName: domains[0], altNames: domains },
@@ -206,12 +208,14 @@ async function obtain() {
         ? dnsChallenge.createHandlers(dnsProviders.get(config.acmeDnsProvider), {
               waitSeconds: config.acmeDnsWait,
               log: (message) => logService.addInfoLogBasicInfoEntry('ACME ', message),
+              onEvent: onStep,
           })
         : null;
 
     const tokens = new Map();
     // Port 80 is opened only when a name is proven over HTTP.
     const challengeServer = plan.needsHttp ? await startChallengeServer(tokens) : null;
+    onStep('order placed', domains.join(', '));
     let cert;
     try {
         cert = await client.auto({
@@ -226,6 +230,7 @@ async function obtain() {
                 if (challenge.type === 'dns-01' && dnsHandlers) return dnsHandlers.create(authz, challenge, keyAuthorization);
                 if (challenge.type !== 'http-01' || !challengeServer) throw new Error(`The ${challenge.type} challenge is not enabled`);
                 tokens.set(challenge.token, keyAuthorization);
+                onStep('token served over HTTP', authz.identifier.value);
             },
             challengeRemoveFn: async (authz, challenge, keyAuthorization) => {
                 if (challenge.type === 'dns-01' && dnsHandlers) return dnsHandlers.remove(authz, challenge, keyAuthorization);
@@ -240,11 +245,66 @@ async function obtain() {
         // A failed order must not leave a challenge record behind.
         const left = dnsHandlers ? await dnsHandlers.cleanup() : [];
         if (left.length) logService.addErrorLogErrorEntry('Challenge records could not be removed: ', left.join('; '));
+        onStep(left.length ? 'challenge records left behind' : 'challenge records cleaned up', left.join('; '));
     }
+    onStep('authority validated the names', domains.join(', '));
+    return { key, cert };
+}
+
+async function obtain() {
+    const domains = acmeDomains();
+    const files = acmeFiles();
+    const { key, cert } = await placeOrder({ directoryUrl: acmeDirectoryUrl(), accountFile: files.account });
 
     await writePair(files.key, files.cert, key, cert);
     logService.addInfoLogBasicInfoEntry('Certificate issued for ', domains.join(', '), ' by ', acmeDirectoryUrl());
     return readPair(files.key, files.cert);
+}
+
+// ---- the test --------------------------------------------------------------------------------------------
+
+// The authority for the test: the staging directory of Let's Encrypt, whatever is configured for the real
+// certificate. Another directory that was configured on purpose (not production) is used as it is.
+function testDirectoryUrl() {
+    const directories = require('acme-client').directory.letsencrypt;
+    return config.acmeDirectory === 'production' ? directories.staging : acmeDirectoryUrl();
+}
+
+let testing = null;
+
+// Runs the whole order, with the settings of the real certificate, against the staging authority: the names are
+// proven in the way that is configured, a certificate is issued by the staging authority and thrown away.
+// Nothing is installed, no file of the real certificate is touched, and the real account is not used. The answer
+// lists every step that was reached; a failure ends the list with the reason. One test at a time.
+function test(user) {
+    requireHttps();
+    if (source !== 'letsencrypt') throw new HttpError(409, "The certificate does not come from Let's Encrypt: there is nothing to test");
+    testing ??= (async () => {
+        const started = Date.now();
+        const steps = [];
+        const step = (name, detail = '', ok = true) => steps.push({ step: name, ok, detail, ms: Date.now() - started });
+        const directory = testDirectoryUrl();
+        const result = { ok: false, directory, challenge: { type: config.acmeChallenge, provider: config.acmeChallenge === 'http-01' ? null : config.acmeDnsProvider || null } };
+        try {
+            // A folder of its own: the staging account and nothing else
+            const accountFile = path.join(resolve(config.acmeFolder), 'test', new URL(directory).host.replace(/[^a-z0-9.-]/gi, '_'), 'account.key');
+            step('test started', `${acmeDomains().join(', ')} at ${new URL(directory).host}`);
+            await placeOrder({ directoryUrl: directory, accountFile, onStep: (name, detail) => step(name, detail) });
+            step('certificate issued by the test authority', 'thrown away, not installed');
+            result.ok = true;
+        } catch (err) {
+            step('failed', err.message, false);
+            result.error = err.message;
+        }
+        result.steps = steps;
+        result.at = new Date();
+        state.lastTest = { at: result.at, ok: result.ok, error: result.error ?? null, directory };
+        logService.addInfoLogBasicInfoEntry('Certificate test ', result.ok ? 'passed' : `failed: ${result.error}`, ' (', directory, ') by ', user?.username);
+        return result;
+    })().finally(() => {
+        testing = null;
+    });
+    return testing;
 }
 
 async function loadLetsEncrypt() {
@@ -388,6 +448,7 @@ function status() {
         challenge: source === 'letsencrypt' ? challengeStatus() : null,
         lastCheckAt: state.lastCheckAt,
         lastError: state.lastError,
+        lastTest: state.lastTest,
     };
 }
 
@@ -438,4 +499,5 @@ module.exports = {
     status,
     upload,
     renewNow,
+    test,
 };

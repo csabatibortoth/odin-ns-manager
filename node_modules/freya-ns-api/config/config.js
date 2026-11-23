@@ -57,7 +57,7 @@ module.exports = Object.freeze({
     acmeDnsWait: number(env.FREYA_ACME_DNS_WAIT, 120),
     // letsencrypt: where the account key, the private key and the certificate are kept.
     acmeFolder: env.FREYA_ACME_FOLDER || 'sslcert/letsencrypt',
-    version: '2.4.0',
+    version: '2.5.0',
     type: env.FREYA_TYPE || 'DEV',
 
     modelServerType: 'MNG',

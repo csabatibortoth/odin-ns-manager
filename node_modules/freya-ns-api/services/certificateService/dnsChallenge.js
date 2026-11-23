@@ -57,7 +57,7 @@ async function visibleOnPublicResolvers(name, value) {
 
 // The two functions acme-client calls, plus `cleanup`, which removes what is left after a failure.
 // options.waitSeconds: how long to wait for the record to be visible before giving up.
-function createHandlers(provider, { waitSeconds = 120, sleep = sleepFor, now = Date.now, log = () => {} } = {}) {
+function createHandlers(provider, { waitSeconds = 120, sleep = sleepFor, now = Date.now, log = () => {}, onEvent = () => {} } = {}) {
     const visible = provider.visible ? provider.visible.bind(provider) : visibleOnPublicResolvers;
     // What was written and not yet removed: a challenge that fails must not leave a record behind.
     const written = new Map();
@@ -88,7 +88,9 @@ function createHandlers(provider, { waitSeconds = 120, sleep = sleepFor, now = D
         written.set(keyOf(name, keyAuthorization), { name, value: keyAuthorization });
         await provider.create(name, keyAuthorization);
         log(`challenge record written: ${name}`);
+        onEvent('record written', name);
         await waitUntilVisible(name, keyAuthorization);
+        onEvent('record visible', name);
     }
 
     async function remove(authz, challenge, keyAuthorization) {
@@ -96,6 +98,7 @@ function createHandlers(provider, { waitSeconds = 120, sleep = sleepFor, now = D
         await provider.remove(name, keyAuthorization);
         written.delete(keyOf(name, keyAuthorization));
         log(`challenge record removed: ${name}`);
+        onEvent('record removed', name);
     }
 
     // Removes every record still written; an error on one does not stop the others. Returns the errors.
