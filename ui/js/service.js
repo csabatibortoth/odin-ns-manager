@@ -123,6 +123,22 @@ function daysBadge(days) {
     return badge(`${days} day(s) left`, days < 15 ? 'danger' : days < 30 ? 'warn' : 'ok');
 }
 
+const PROVIDERS = { zones: 'a zone of this server', delegation: 'a CNAME to a zone of this server', cloudflare: 'Cloudflare' };
+
+function challengeText({ type, provider }) {
+    if (type === 'http-01') return 'HTTP (port 80)';
+    const through = `DNS, through ${PROVIDERS[provider] || provider || 'no provider set'}`;
+    return type === 'auto' ? `${through}, for wildcard names; HTTP for the rest` : through;
+}
+
+function delegationCard(records) {
+    return card(
+        'Records to add at the DNS of your domains',
+        records.map(({ type, name, target }) => [name, el('span', { class: 'mono break', text: `${type}  ${target}` })]),
+        el('p', { class: 'muted', text: 'Once per name, at the provider that hosts the domain. Let\'s Encrypt follows the CNAME to the zone of this server, which answers the challenge.' })
+    );
+}
+
 export async function certificate($page) {
     const $body = el('div');
 
@@ -160,6 +176,7 @@ export async function certificate($page) {
                     [
                         ['From', custom ? 'Files of your own' : "Let's Encrypt"],
                         ...(custom ? [] : [['Names asked for', el('span', { class: 'mono break', text: status.domains.join(', ') || '–' })]]),
+                        ...(status.challenge ? [['Names proven by', challengeText(status.challenge)]] : []),
                         ['Renewed by itself', status.automaticRenewal ? badge('Yes', 'ok') : badge('No')],
                         ['Last check', formatDate(status.lastCheckAt)],
                         ['Last failure', status.lastError ? el('span', { class: 'field-error break', text: status.lastError }) : '–'],
@@ -171,6 +188,8 @@ export async function certificate($page) {
                 )
             )
         );
+        // Delegation: what the owner of each domain has to add at the real DNS, once
+        if (status.challenge?.recordsToAdd?.length) $body.append(delegationCard(status.challenge.recordsToAdd));
         if (custom) $body.append(uploadCard(show));
     };
 

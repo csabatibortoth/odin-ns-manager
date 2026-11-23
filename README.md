@@ -226,6 +226,11 @@ environment variable, what was saved in the browser, its default.
 | `ODIN_HTTPS_DOMAINS` | – | `letsencrypt`: the public names of this server, comma separated. Required |
 | `ODIN_ACME_EMAIL` / `ODIN_ACME_DIRECTORY` | – / `production` | `letsencrypt`: the e-mail of the account, and `production`, `staging` or the directory URL of another ACME authority |
 | `ODIN_ACME_HTTP_PORT` / `ODIN_ACME_FOLDER` | `80` / `sslcert/letsencrypt` | `letsencrypt`: the port that answers the challenge, and where the keys are kept |
+| `ODIN_ACME_CHALLENGE` | `http-01` | `letsencrypt`: how the names are proven: `http-01` (port 80), `dns-01` (a TXT record; wildcards), or `auto` (DNS for a wildcard, HTTP for the rest) |
+| `ODIN_ACME_DNS_PROVIDER` | `zones` | `dns-01`: where the record is written: `zones` (a zone of this server), `delegation` (a CNAME at any DNS to a zone of this server), `cloudflare` |
+| `ODIN_ACME_DELEGATION_ZONE` | – | `delegation`: a zone hosted on this server, e.g. `acme.example.net` |
+| `ODIN_ACME_CLOUDFLARE_TOKEN` / `ODIN_ACME_CLOUDFLARE_TOKEN_FILE` / `ODIN_ACME_CLOUDFLARE_ZONE_ID` | – | `cloudflare`: an API token limited to one zone (`Zone: DNS: Edit`, `Zone: Zone: Read`), or a file whose first line is the token (only from the environment); the zone id is optional |
+| `ODIN_ACME_DNS_WAIT` | `120` | `dns-01`: seconds to wait until the record is answered |
 | `ODIN_DOCS_ENABLED` | `true` | The Swagger UI of the API at `/api/docs` |
 | `ODIN_MONITORING_ROLES` | `admin` | Roles that may read the query log, the clients and the metrics |
 | `ODIN_AUTH_ENABLED` | `true` | Set to `false` to skip token checks. For local development only |
@@ -519,7 +524,21 @@ one of two sources, `ODIN_HTTPS_CERT_SOURCE`:
   must lead to this server in the public DNS, and port 80 must reach it from
   the internet. Try it with `ODIN_ACME_DIRECTORY=staging` first.
 
-The Certificate page shows the certificate that is served and when it expires.
+  With `ODIN_ACME_CHALLENGE=dns-01` (or `auto`) the names are proven through a
+  TXT record instead of port 80, which also allows wildcard names such as
+  `*.example.com`. The record is written into a zone of this server
+  (`zones`), through a CNAME that you add once at any DNS host
+  (`delegation`), or through the API of Cloudflare (`cloudflare`). The settings
+  are in the group *HTTPS certificate*; they take effect at the next start. The
+  Cloudflare token is write-only: it is never shown again, and the settings file
+  is readable by its owner only. See the
+  [freya-ns-api documentation](https://github.com/csabatibortoth/freya-ns-api#dns-validation-dns-01).
+  Needs freya-ns-api 2.4.0 or later.
+
+The Certificate page shows the certificate that is served and when it expires,
+how its names are proven, and, for the delegation, the CNAME records to add at
+the DNS of your domains. The Heimdall plugin sends `aesir.certificate.days_left`,
+and a mail is sent when a renewal fails or fewer than 14 days are left.
 The keys are kept under `sslcert/`, which is not part of the repository. See
 the [freya-ns-api documentation](https://github.com/csabatibortoth/freya-ns-api#https)
 for the details.
