@@ -203,6 +203,7 @@ environment variable, what was saved in the browser, its default.
 | `ODIN_NS_ZONES_ENABLED` | `true` | Answer the zones and records of the database. Set to `false` to forward every query |
 | `ODIN_NS_ZONE_REFRESH` | `10` | Seconds between two checks of the database for changed zones |
 | `ODIN_NS_UPSTREAM` | `1.1.1.1,1.0.0.1` | Comma separated DNS servers that are asked for unknown names. Empty means the DNS servers of the system |
+| `ODIN_NS_RECURSION_ALLOWED` | loopback and private networks | Comma separated addresses and CIDR ranges of the clients that may use this server as a resolver. Everybody else gets `REFUSED` for names that are not in one of your own zones. See [Who may use the resolver](#who-may-use-the-resolver) |
 | `ODIN_NS_UPSTREAM_TIMEOUT` / `ODIN_NS_UPSTREAM_TRIES` | `2000` / `2` | Milliseconds to wait for an upstream answer, and the number of attempts |
 | `ODIN_NS_CACHE_ENABLED` | `true` | Keep answers in memory |
 | `ODIN_NS_CACHE_MAX_ENTRIES` | `10000` | Size of the cache; the oldest entry is dropped when it is full |
@@ -419,6 +420,35 @@ DNSSEC said about a name. The `validate` mode needs a correct system clock,
 and an upstream that hands over the DNSSEC records, which nearly all do.
 
 ![Lookup of a signed name: DNSSEC signed and valid](docs/screenshots/lookup-dnssec.png)
+
+### Who may use the resolver
+
+A DNS server that answers recursive questions for everybody who can reach it is
+an *open resolver*: it is used to amplify attacks on other networks. So the
+names that are **not** in one of your own zones (or standalone records) are
+answered only to the clients in `ODIN_NS_RECURSION_ALLOWED`; everybody else gets
+`REFUSED`. Your own zones are answered for anybody, which is what an
+authoritative server is for, and so is a question from this machine itself.
+
+The default is safe: the loopback range, the private networks (`10.0.0.0/8`,
+`172.16.0.0/12`, `192.168.0.0/16`), the shared address space of VPNs such as
+Tailscale (`100.64.0.0/10`), link-local addresses, and their IPv6 counterparts
+(`::1`, `fc00::/7`, `fe80::/10`). Set the list in the settings (group
+*Forwarding*; it applies at once) or in the environment, e.g.
+`ODIN_NS_RECURSION_ALLOWED=192.168.1.0/24,203.0.113.7`. An empty list serves
+nobody but this machine. To run a public resolver on purpose, add `0.0.0.0/0`
+and `::/0`; do that only behind your own rate limiting.
+
+The dashboard counts the refused queries (a tile, a row in the DNS server card, and the
+counter `refused` of the Heimdall metric `aesir.dns.queries`). Administrators and
+the monitoring roles can see the clients that were refused most often at
+`GET /api/service/refused`. That table is kept in memory only (at most 200
+clients, it is gone at a restart), and refused queries are not written to the
+query log: anybody on the internet can send them.
+
+**When upgrading:** a server that was reachable from the internet and answered
+everybody now refuses the public clients. The clients of your own networks are
+unaffected. If you serve other public addresses on purpose, add their ranges.
 
 ### Forwarding
 
@@ -758,6 +788,19 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.9.0
+
+#### Security
+
+- **No open resolver.** Names that are not in your own zones are answered only to the clients of `ODIN_NS_RECURSION_ALLOWED` (default: loopback and private networks); others get `REFUSED`. Own zones stay open to everybody. See [Who may use the resolver](#who-may-use-the-resolver). **Check this when upgrading** if clients with public addresses use this server.
+- The settings file is written readable by its owner only; it holds passwords and tokens.
+
+#### New
+
+- **Let's Encrypt with DNS validation** (needs freya-ns-api 2.4.0): wildcard names and no port 80, through a zone of this server, a CNAME at any DNS host, or Cloudflare. The Certificate page shows how the names are proven and the CNAME records to add.
+- **Certificate alerts**: the metrics `aesir.certificate.days_left` and `aesir.certificate.renewal_failing`, and a mail when a renewal fails or fewer than 14 days are left.
+- The dashboard counts refused queries; the Heimdall metric `aesir.dns.queries` has the kind `refused`.
 
 ### 2.8.1
 

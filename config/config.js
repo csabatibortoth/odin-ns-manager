@@ -11,6 +11,7 @@ const fs = require('fs');
 const net = require('net');
 const path = require('path');
 const { Resolver } = require('dns');
+const cidr = require('../services/serverService/cidr');
 
 const env = process.env;
 const SETTINGS_FILE = path.resolve(__dirname, '..', env.ODIN_SETTINGS_FILE || 'config/settings.json');
@@ -60,6 +61,14 @@ const SETTINGS = [
         live: true, min: 1, max: 3600,
     },
 
+    {
+        group: 'Forwarding', key: 'nsRecursionAllowed', env: 'ODIN_NS_RECURSION_ALLOWED', type: 'list', label: 'Clients that may use this server as a resolver', live: true,
+        fallback: ['127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '100.64.0.0/10', '169.254.0.0/16', '::1/128', 'fc00::/7', 'fe80::/10'],
+        hint: 'CIDR ranges or addresses, comma separated. Names that are not in one of your own zones are answered only to these clients; everybody else gets REFUSED. ' +
+            'Your own zones are answered for anybody. The default is this machine and the private networks. ' +
+            'To run a public resolver on purpose, add 0.0.0.0/0 and ::/0: that makes the server usable for attacks on others.',
+        check: (value) => value.every((entry) => cidr.parseEntry(entry)) || 'must be addresses or ranges like 192.168.0.0/16 or 2001:db8::/32',
+    },
     {
         group: 'Forwarding', key: 'nsUpstreamServers', env: 'ODIN_NS_UPSTREAM', type: 'list', fallback: ['1.1.1.1', '1.0.0.1'], label: 'Upstream DNS servers',
         live: true, hint: 'Comma separated addresses, with an optional port. Empty: the DNS servers of the system.',

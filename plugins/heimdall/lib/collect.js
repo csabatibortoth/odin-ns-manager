@@ -2,7 +2,7 @@
 //
 // Counters only ever go up (use "rate" in Heimdall to see them per second); gauges are what is
 // true now. The names start with "aesir." and stay stable, so graphs and rules keep working.
-const KINDS = ['total', 'zones', 'records', 'blocked', 'forwarded', 'failed'];
+const KINDS = ['total', 'zones', 'records', 'blocked', 'forwarded', 'failed', 'refused'];
 
 // sources: { uptime, memory, queries, answerMs, zones, blocking, cache, queryLog }, each a function
 function collect(sources, { now = Date.now(), source }) {

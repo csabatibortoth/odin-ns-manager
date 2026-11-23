@@ -64,8 +64,8 @@ export async function dashboard($page) {
         charts.memory.update({ ...frame, values: { memory: m.memory.map((bytes) => (bytes === null ? null : bytes / 1024 / 1024)) } });
         charts.cache.update({ ...frame, values: { cache: m.cache } });
 
-        const totals = { own: sum(own), forwarded: sum(m.forwarded), failed: sum(m.failed), blocked: sum(m.blocked) };
-        const total = totals.own + totals.forwarded + totals.failed + totals.blocked;
+        const totals = { own: sum(own), forwarded: sum(m.forwarded), failed: sum(m.failed), blocked: sum(m.blocked), refused: sum(m.refused) };
+        const total = totals.own + totals.forwarded + totals.failed + totals.blocked + totals.refused;
         const share = (part) => (total ? `${formatNumber((part / total) * 100, 1)} % of the queries` : 'no queries yet');
         // The average of the answers, not of the samples
         const answered = m.ms.map((ms, index) => (ms === null ? 0 : own[index] + m.forwarded[index] + m.blocked[index]));
@@ -78,6 +78,7 @@ export async function dashboard($page) {
             stat('Forwarded', formatNumber(totals.forwarded, 0), share(totals.forwarded)),
             stat('Blocked', formatNumber(totals.blocked, 0), share(totals.blocked)),
             stat('Failed', formatNumber(totals.failed, 0), share(totals.failed)),
+            stat('Refused', formatNumber(totals.refused, 0), share(totals.refused)),
             stat('Average answer time', time === null ? '–' : `${formatNumber(time)} ms`, period)
         );
     };
@@ -109,6 +110,8 @@ export async function dashboard($page) {
                 ['Blocked', s.dns.queries.blocked],
                 ['Forwarded', s.dns.queries.forwarded],
                 ['Failed', s.dns.queries.failed],
+                ['Refused (not allowed to use the resolver)', s.dns.queries.refused],
+                ['Resolver for', el('span', { class: 'mono break', text: s.dns.recursion.allowed.includes('0.0.0.0/0') || s.dns.recursion.allowed.includes('::/0') ? 'everybody (open resolver)' : `${s.dns.recursion.allowed.length} range(s): see the settings` })],
             ]),
             card(
                 'Own zones and records',
