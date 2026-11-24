@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.9.0** - see the [release notes](#release-notes).
+Current version: **2.10.0** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -228,9 +228,12 @@ environment variable, what was saved in the browser, its default.
 | `ODIN_ACME_EMAIL` / `ODIN_ACME_DIRECTORY` | – / `production` | `letsencrypt`: the e-mail of the account, and `production`, `staging` or the directory URL of another ACME authority |
 | `ODIN_ACME_HTTP_PORT` / `ODIN_ACME_FOLDER` | `80` / `sslcert/letsencrypt` | `letsencrypt`: the port that answers the challenge, and where the keys are kept |
 | `ODIN_ACME_CHALLENGE` | `http-01` | `letsencrypt`: how the names are proven: `http-01` (port 80), `dns-01` (a TXT record; wildcards), or `auto` (DNS for a wildcard, HTTP for the rest) |
-| `ODIN_ACME_DNS_PROVIDER` | `zones` | `dns-01`: where the record is written: `zones` (a zone of this server), `delegation` (a CNAME at any DNS to a zone of this server), `cloudflare` |
+| `ODIN_ACME_DNS_PROVIDER` | `zones` | `dns-01`: where the record is written: `zones` (a zone of this server), `delegation` (a CNAME at any DNS to a zone of this server), `cloudflare`, `rfc2136` (a signed DNS UPDATE to any name server that takes dynamic updates), `hook` (a program of yours) |
 | `ODIN_ACME_DELEGATION_ZONE` | – | `delegation`: a zone hosted on this server, e.g. `acme.example.net` |
 | `ODIN_ACME_CLOUDFLARE_TOKEN` / `ODIN_ACME_CLOUDFLARE_TOKEN_FILE` / `ODIN_ACME_CLOUDFLARE_ZONE_ID` | – | `cloudflare`: an API token limited to one zone (`Zone: DNS: Edit`, `Zone: Zone: Read`), or a file whose first line is the token (only from the environment); the zone id is optional |
+| `ODIN_ACME_RFC2136_SERVER` / `_ZONE` / `_KEY_NAME` / `_KEY_ALGORITHM` | – / – / – / `hmac-sha256` | `rfc2136`: the master name server (`host` or `host:port`, reached over TCP), the zone to update, and the name and algorithm (`hmac-sha256`, `-sha384`, `-sha512`) of the TSIG key |
+| `ODIN_ACME_RFC2136_KEY_SECRET` / `ODIN_ACME_RFC2136_KEY_FILE` | – | `rfc2136`: the base64 secret of the key (write-only in the settings), or a file whose first line is the secret (preferred; environment only). Let the key change only `_acme-challenge` TXT records on the name server |
+| `ODIN_ACME_HOOK` / `ODIN_ACME_HOOK_TIMEOUT` | – / `60` | `hook`: the absolute path of your program, called as `<program> create\|remove <name> <value>`, and the seconds before it is stopped. **The path can only be set in the environment** (a setting in the user interface could make the server run any program). The program must not be writable by others; it gets an empty environment. See the README of freya-ns-api |
 | `ODIN_ACME_DNS_WAIT` / `ODIN_ACME_DNS_SETTLE` | `120` / `60` | `dns-01`: seconds to wait until the record is answered, and then the seconds to wait before the authority is asked (0 switches it off; needs freya-ns-api 2.5.1) |
 | `ODIN_DOCS_ENABLED` | `true` | The Swagger UI of the API at `/api/docs` |
 | `ODIN_MONITORING_ROLES` | `admin` | Roles that may read the query log, the clients and the metrics |
@@ -796,6 +799,19 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.10.0
+
+#### New
+
+- **DNS validation through RFC 2136 + TSIG** and **through your own program**: two more places where the TXT record of the Let's Encrypt DNS challenge can be written (freya-ns-api 2.6.0). With `rfc2136` any
+  name server that takes dynamic updates (BIND, Knot, PowerDNS ...) is updated with a signed DNS UPDATE; the settings are the name server, the zone and the key (the secret is write-only).
+  With `hook` a program of the administrator sets and removes the record: its path is **environment only** (`ODIN_ACME_HOOK`) and the settings page cannot change it.
+  The Test button of the Certificate page works with both.
+
+#### Upgrading from 2.9.0
+
+- Nothing changes unless you choose one of the new providers.
 
 ### 2.9.0
 

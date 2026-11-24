@@ -126,3 +126,31 @@ test('a wildcard needs the DNS challenge; the delegation needs its zone; a token
     config.update({ acmeCloudflareToken: null, acmeChallenge: null, acmeDnsProvider: null, acmeDelegationZone: null, httpsDomains: null });
     assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).acmeCloudflareToken, undefined);
 });
+
+test('RFC 2136 and the hook: the key secret is write-only, the key file and the hook program are environment only, the settings must be complete', () => {
+    const refused = (changes, key) => assert.throws(() => config.update(changes), (err) => Boolean(err.details[key]));
+    assert.equal(config.acmeRfc2136KeyAlgorithm, 'hmac-sha256');
+    assert.equal(setting('acmeRfc2136KeySecret').secret, true);
+    assert.equal('value' in setting('acmeRfc2136KeySecret'), false);
+    // a path from the browser would make the server execute any program, or read any file: only the environment
+    refused({ acmeHook: '/bin/sh' }, 'acmeHook');
+    refused({ acmeRfc2136KeyFile: '/etc/passwd' }, 'acmeRfc2136KeyFile');
+    // checks of the single values
+    refused({ acmeRfc2136Server: 'bad host' }, 'acmeRfc2136Server');
+    refused({ acmeRfc2136Zone: 'not a zone' }, 'acmeRfc2136Zone');
+    refused({ acmeRfc2136KeyName: 'bad name;' }, 'acmeRfc2136KeyName');
+    refused({ acmeRfc2136KeyAlgorithm: 'hmac-md5' }, 'acmeRfc2136KeyAlgorithm');
+    refused({ acmeRfc2136KeySecret: 'not base64 !' }, 'acmeRfc2136KeySecret');
+    refused({ acmeHookTimeout: 301 }, 'acmeHookTimeout');
+    // together
+    config.update({ httpsCertSource: 'letsencrypt', httpsDomains: ['example.com'], acmeChallenge: 'dns-01' });
+    refused({ acmeDnsProvider: 'rfc2136', acmeRfc2136Server: 'ns1.example.com' }, 'acmeRfc2136Zone');
+    refused({ acmeDnsProvider: 'rfc2136', acmeRfc2136Server: 'ns1.example.com', acmeRfc2136Zone: 'example.com', acmeRfc2136KeyName: 'acme-key' }, 'acmeRfc2136KeySecret');
+    refused({ acmeDnsProvider: 'hook' }, 'acmeDnsProvider'); // no ODIN_ACME_HOOK in the environment
+    const secret = Buffer.alloc(32, 7).toString('base64');
+    assert.ok(config.update({ acmeDnsProvider: 'rfc2136', acmeRfc2136Server: 'ns1.example.com:53', acmeRfc2136Zone: 'example.com', acmeRfc2136KeyName: 'acme-key', acmeRfc2136KeySecret: secret }).includes('acmeDnsProvider'));
+    assert.equal(JSON.stringify(config.describe()).includes(secret), false);
+    assert.equal(setting('acmeRfc2136KeySecret').isSet, true);
+    assert.equal(fs.statSync(file).mode & 0o077, 0);
+    config.update({ acmeDnsProvider: null, acmeRfc2136Server: null, acmeRfc2136Zone: null, acmeRfc2136KeyName: null, acmeRfc2136KeySecret: null, acmeChallenge: null, httpsDomains: null });
+});
