@@ -53,6 +53,18 @@ module.exports = Object.freeze({
     acmeCloudflareToken: env.FREYA_ACME_CLOUDFLARE_TOKEN || '',
     acmeCloudflareTokenFile: env.FREYA_ACME_CLOUDFLARE_TOKEN_FILE || '',
     acmeCloudflareZoneId: (env.FREYA_ACME_CLOUDFLARE_ZONE_ID || '').trim(),
+    // dns-01, provider rfc2136: a DNS UPDATE (RFC 2136) signed with a TSIG key (RFC 8945) sent over TCP to the master name server of the
+    // zone. The key secret is base64, given directly or as a file (the first line); the algorithm is hmac-sha256, -sha384 or -sha512.
+    acmeRfc2136Server: (env.FREYA_ACME_RFC2136_SERVER || '').trim(),
+    acmeRfc2136Zone: (env.FREYA_ACME_RFC2136_ZONE || '').trim().toLowerCase(),
+    acmeRfc2136KeyName: (env.FREYA_ACME_RFC2136_KEY_NAME || '').trim().toLowerCase(),
+    acmeRfc2136KeyAlgorithm: (env.FREYA_ACME_RFC2136_KEY_ALGORITHM || 'hmac-sha256').trim().toLowerCase(),
+    acmeRfc2136KeySecret: env.FREYA_ACME_RFC2136_KEY_SECRET || '',
+    acmeRfc2136KeyFile: env.FREYA_ACME_RFC2136_KEY_FILE || '',
+    // dns-01, provider hook: the absolute path of a program of the administrator, called as `<program> create|remove <name> <value>`.
+    // Environment only, on purpose: it is a program that runs with the rights of this server, so no setting of the API may point to it.
+    acmeHook: (env.FREYA_ACME_HOOK || '').trim(),
+    acmeHookTimeout: number(env.FREYA_ACME_HOOK_TIMEOUT, 60),
     // dns-01: seconds to wait after the record is visible, before the authority is asked (it validates from several places
     // with caches of their own). 0 switches it off.
     acmeDnsSettle: number(env.FREYA_ACME_DNS_SETTLE, 60),
@@ -60,7 +72,7 @@ module.exports = Object.freeze({
     acmeDnsWait: number(env.FREYA_ACME_DNS_WAIT, 120),
     // letsencrypt: where the account key, the private key and the certificate are kept.
     acmeFolder: env.FREYA_ACME_FOLDER || 'sslcert/letsencrypt',
-    version: '2.5.1',
+    version: '2.6.0',
     type: env.FREYA_TYPE || 'DEV',
 
     modelServerType: 'MNG',

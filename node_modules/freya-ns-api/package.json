@@ -1,6 +1,6 @@
 {
   "name": "freya-ns-api",
-  "version": "2.5.1",
+  "version": "2.6.0",
   "description": "",
   "main": "api.js",
   "scripts": {
