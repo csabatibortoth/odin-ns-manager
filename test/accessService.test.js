@@ -15,6 +15,9 @@ fs.writeFileSync(settingsFile, JSON.stringify({ nsUpstreamServers: ['9.9.9.9'] }
 process.env.ODIN_SETTINGS_FILE = settingsFile;
 
 const config = require('../config/config');
+// The cases below use documentation/test ranges, never local interface addresses.
+// Avoid depending on host interface enumeration in locked-down test containers.
+os.networkInterfaces = () => ({});
 const access = require('../services/serverService/accessService');
 
 after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -32,6 +35,28 @@ test('a clean or pre-access-list settings file gets the private-network recursio
         'fe80::/10',
     ]);
     assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, 'utf8')), { nsUpstreamServers: ['9.9.9.9'] });
+});
+
+test('a fresh install does not allow public recursion by default', () => {
+    const freshSettings = path.join(directory, 'fresh-settings.json');
+    const configPath = require.resolve('../config/config');
+    const savedConfigModule = require.cache[configPath];
+    const savedSettingsPath = process.env.ODIN_SETTINGS_FILE;
+    try {
+        delete require.cache[configPath];
+        process.env.ODIN_SETTINGS_FILE = freshSettings;
+        const freshConfig = require('../config/config');
+        assert.deepEqual(freshConfig.nsRecursionAllowed, [
+            '127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',
+            '100.64.0.0/10', '169.254.0.0/16', '::1/128', 'fc00::/7', 'fe80::/10',
+        ]);
+        assert.equal(freshConfig.nsRecursionAllowed.includes('0.0.0.0/0'), false);
+    } finally {
+        delete require.cache[configPath];
+        require.cache[configPath] = savedConfigModule;
+        process.env.ODIN_SETTINGS_FILE = savedSettingsPath;
+    }
+    assert.equal(fs.existsSync(freshSettings), false, 'reading defaults should not create a settings file');
 });
 
 test('recursion access checks IPv4, IPv6, and IPv4-mapped client addresses against CIDRs', () => {
