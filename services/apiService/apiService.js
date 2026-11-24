@@ -45,6 +45,14 @@ const FREYA_ENV = {
     FREYA_ACME_DIRECTORY: config.acmeDirectory,
     FREYA_ACME_HTTP_PORT: config.acmeHttpPort,
     FREYA_ACME_FOLDER: ownFile(config.acmeFolder),
+    FREYA_ACME_CHALLENGE: config.acmeChallenge,
+    FREYA_ACME_DNS_PROVIDER: config.acmeDnsProvider,
+    FREYA_ACME_DNS_WAIT: config.acmeDnsWait,
+    FREYA_ACME_DNS_SETTLE: config.acmeDnsSettle,
+    FREYA_ACME_DELEGATION_ZONE: config.acmeDelegationZone,
+    FREYA_ACME_CLOUDFLARE_TOKEN: config.acmeCloudflareToken,
+    FREYA_ACME_CLOUDFLARE_TOKEN_FILE: config.acmeCloudflareTokenFile,
+    FREYA_ACME_CLOUDFLARE_ZONE_ID: config.acmeCloudflareZoneId,
     FREYA_AUTH_ENABLED: config.authEnabled,
     FREYA_DNS_WRITE_ROLES: config.dnsWriteRoles,
     FREYA_MONITORING_ROLES: config.monitoringRoles,
@@ -91,6 +99,24 @@ async function connectDb() {
     }
 }
 
+// The DNS-01 challenge of Let's Encrypt (freya-ns-api 2.4.0 and later): the TXT record is written into one of our zones,
+// so this process has to read the zones at once, and can ask its own name server whether the record is answered.
+// An older freya-ns-api has no such provider: nothing to do then.
+function configureDnsChallenge(onDnsChange) {
+    let providers;
+    try {
+        providers = require('freya-ns-api/services/certificateService/dnsProviders');
+    } catch (err) {
+        if (err.code !== 'MODULE_NOT_FOUND') throw err;
+        return;
+    }
+    const wildcard = ['0.0.0.0', '::'].includes(config.serverIPAddress);
+    providers.configureZones({
+        onChange: () => onDnsChange?.(),
+        resolver: { address: wildcard ? '127.0.0.1' : config.serverIPAddress, port: config.nsServerPort },
+    });
+}
+
 // Connects to the database and starts the HTTP(S) server of the API, which
 // serves the user interface as well.
 // Express is only loaded when the API is actually started.
@@ -106,6 +132,7 @@ async function startApi({ onDnsChange } = {}) {
     const { createApp } = require('freya-ns-api/app');
 
     await userService.ensureDefaultAdmin();
+    configureDnsChallenge(onDnsChange);
     // Our own routes and the user interface come first; everything else,
     // also what is not found, is answered by the application of freya-ns-api.
     const express = require('express');
@@ -147,4 +174,10 @@ async function stopApi() {
     }
 }
 
-module.exports = { logService, connectDb, startApi, stopApi };
+// The status of the certificate of HTTPS (null while the API is not running)
+function certificateStatus() {
+    if (!httpServer) return null;
+    return require('freya-ns-api/services/certificateService/certificateService').status();
+}
+
+module.exports = { logService, connectDb, startApi, stopApi, certificateStatus };

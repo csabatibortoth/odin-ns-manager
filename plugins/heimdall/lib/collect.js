@@ -2,7 +2,7 @@
 //
 // Counters only ever go up (use "rate" in Heimdall to see them per second); gauges are what is
 // true now. The names start with "aesir." and stay stable, so graphs and rules keep working.
-const KINDS = ['total', 'zones', 'records', 'blocked', 'forwarded', 'failed'];
+const KINDS = ['total', 'zones', 'records', 'blocked', 'forwarded', 'failed', 'refused'];
 
 // sources: { uptime, memory, queries, answerMs, zones, blocking, cache, queryLog }, each a function
 function collect(sources, { now = Date.now(), source }) {
@@ -43,6 +43,13 @@ function collect(sources, { now = Date.now(), source }) {
     add('aesir.querylog.dropped', log.dropped, { type: 'counter' });
     add('aesir.querylog.failing', Boolean(log.failing));
 
+    // The certificate of HTTPS, when there is one: an alert rule can warn at 14 days
+    const certificate = sources.certificate?.();
+    if (certificate?.certificate) {
+        add('aesir.certificate.days_left', certificate.certificate.daysLeft, { unit: 'd' });
+        add('aesir.certificate.renewal_failing', Boolean(certificate.lastError));
+    }
+
     return points;
 }
 
@@ -55,6 +62,7 @@ function problems(sources) {
         zones: zones.failing ? 'The zones could not be read from the database' : null,
         blocking: blocking.failing ? 'The block lists could not be loaded' : null,
         queryLog: log.failing ? 'The query log could not be written' : null,
+        certificate: sources.certificate?.()?.lastError ? 'The certificate could not be renewed' : null,
     };
 }
 
@@ -76,6 +84,11 @@ function serverSources() {
         blocking: () => blockService.state(),
         cache: () => ({ entries: searchService.cacheSize(), max: config.nsCacheMaxEntries }),
         queryLog: () => queryLogService.state(),
+        // Looked at only when the API has been loaded: asking must not start anything
+        certificate: () => {
+            const loaded = require.cache[require.resolve('../../../services/apiService/apiService')];
+            return loaded?.exports.certificateStatus?.() ?? null;
+        },
     };
 }
 

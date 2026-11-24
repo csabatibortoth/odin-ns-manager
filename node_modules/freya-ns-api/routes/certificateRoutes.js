@@ -20,4 +20,9 @@ router.post('/renew', async (req, res) => {
     res.json(await certificateService.renewNow(req.user));
 });
 
+// Runs a whole order against the staging authority, installs nothing, and lists the steps. See certificateService.test.
+router.post('/test', async (req, res) => {
+    res.json(await certificateService.test(req.user));
+});
+
 module.exports = router;

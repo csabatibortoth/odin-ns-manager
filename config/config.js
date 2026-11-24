@@ -11,6 +11,7 @@ const fs = require('fs');
 const net = require('net');
 const path = require('path');
 const { Resolver } = require('dns');
+const cidr = require('../services/serverService/cidr');
 
 const env = process.env;
 const SETTINGS_FILE = path.resolve(__dirname, '..', env.ODIN_SETTINGS_FILE || 'config/settings.json');
@@ -60,6 +61,14 @@ const SETTINGS = [
         live: true, min: 1, max: 3600,
     },
 
+    {
+        group: 'Forwarding', key: 'nsRecursionAllowed', env: 'ODIN_NS_RECURSION_ALLOWED', type: 'list', label: 'Clients that may use this server as a resolver', live: true,
+        fallback: ['127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '100.64.0.0/10', '169.254.0.0/16', '::1/128', 'fc00::/7', 'fe80::/10'],
+        hint: 'CIDR ranges or addresses, comma separated. Names that are not in one of your own zones are answered only to these clients; everybody else gets REFUSED. ' +
+            'Your own zones are answered for anybody. The default is this machine and the private networks. ' +
+            'To run a public resolver on purpose, add 0.0.0.0/0 and ::/0: that makes the server usable for attacks on others.',
+        check: (value) => value.every((entry) => cidr.parseEntry(entry)) || 'must be addresses or ranges like 192.168.0.0/16 or 2001:db8::/32',
+    },
     {
         group: 'Forwarding', key: 'nsUpstreamServers', env: 'ODIN_NS_UPSTREAM', type: 'list', fallback: ['1.1.1.1', '1.0.0.1'], label: 'Upstream DNS servers',
         live: true, hint: 'Comma separated addresses, with an optional port. Empty: the DNS servers of the system.',
@@ -133,10 +142,50 @@ const SETTINGS = [
     },
     {
         group: 'HTTPS certificate', key: 'httpsDomains', env: 'ODIN_HTTPS_DOMAINS', type: 'list', fallback: [], label: "Let's Encrypt: public names of this server",
-        hint: 'Comma separated, e.g. dns.example.com. No wildcards, no IP addresses.',
-        check: (value) => value.every((name) => HOST_NAME.test(name)) || 'must be full public host names',
+        hint: 'Comma separated, e.g. dns.example.com. A wildcard (*.example.com) needs the DNS challenge below. No IP addresses.',
+        check: (value) => value.every((name) => HOST_NAME.test(name.replace(/^\*\./, ''))) || 'must be full public host names (a wildcard is *.example.com)',
     },
     { group: 'HTTPS certificate', key: 'acmeEmail', env: 'ODIN_ACME_EMAIL', type: 'string', fallback: '', label: "Let's Encrypt: e-mail of the account", empty: true, max: 254 },
+    {
+        group: 'HTTPS certificate', key: 'acmeChallenge', env: 'ODIN_ACME_CHALLENGE', type: 'string', fallback: 'http-01', label: "Let's Encrypt: how the names are proven",
+        options: [
+            { value: 'http-01', text: 'HTTP: the authority connects to port 80 (default)' },
+            { value: 'dns-01', text: 'DNS: a TXT record is written (wildcards, no port 80)' },
+            { value: 'auto', text: 'DNS for a wildcard name, HTTP for the rest' },
+        ],
+        hint: 'Takes effect at the next start. The DNS challenge needs a provider below.',
+    },
+    {
+        group: 'HTTPS certificate', key: 'acmeDnsProvider', env: 'ODIN_ACME_DNS_PROVIDER', type: 'string', fallback: 'zones', label: "Let's Encrypt, DNS challenge: where the record is written",
+        options: [
+            { value: 'zones', text: 'A zone of this server (no account)' },
+            { value: 'delegation', text: 'Any DNS: a CNAME to a zone of this server' },
+            { value: 'cloudflare', text: 'Cloudflare (API token)' },
+        ],
+        hint: 'The Certificate page lists the CNAME records to add for the delegation.',
+    },
+    {
+        group: 'HTTPS certificate', key: 'acmeDelegationZone', env: 'ODIN_ACME_DELEGATION_ZONE', type: 'string', fallback: '', label: "Let's Encrypt, delegation: zone of this server", empty: true, max: 200,
+        hint: 'A zone hosted here, e.g. acme.example.net, that the _acme-challenge names of your domains point to.',
+        check: (value) => !value || HOST_NAME.test(value) || 'must be a host name',
+    },
+    {
+        group: 'HTTPS certificate', key: 'acmeCloudflareToken', env: 'ODIN_ACME_CLOUDFLARE_TOKEN', type: 'string', fallback: '', label: "Let's Encrypt, Cloudflare: API token", empty: true, secret: true, max: 256,
+        hint: 'Limited to one zone, with the permissions Zone: DNS: Edit and Zone: Zone: Read. Never the global API key. Not shown again.',
+    },
+    { group: 'HTTPS certificate', key: 'acmeCloudflareTokenFile', env: 'ODIN_ACME_CLOUDFLARE_TOKEN_FILE', type: 'string', fallback: '', label: "Let's Encrypt, Cloudflare: file with the API token", editable: false, empty: true },
+    {
+        group: 'HTTPS certificate', key: 'acmeCloudflareZoneId', env: 'ODIN_ACME_CLOUDFLARE_ZONE_ID', type: 'string', fallback: '', label: "Let's Encrypt, Cloudflare: zone id", empty: true, max: 64,
+        hint: 'Optional. Without it the zone is found by name.',
+        check: (value) => !value || /^[A-Za-z0-9]+$/.test(value) || 'letters and digits only',
+    },
+    {
+        group: 'HTTPS certificate', key: 'acmeDnsSettle', env: 'ODIN_ACME_DNS_SETTLE', type: 'int', fallback: 60, label: "Let's Encrypt, DNS challenge: seconds to wait after the record is visible", min: 0, max: 120,
+        hint: 'The authority validates from other places, and a DNS node there can serve the previous order\'s removed records for up to a minute. 0 switches the wait off.',
+    },
+    {
+        group: 'HTTPS certificate', key: 'acmeDnsWait', env: 'ODIN_ACME_DNS_WAIT', type: 'int', fallback: 120, label: "Let's Encrypt, DNS challenge: seconds to wait for the record", min: 10, max: 1800,
+    },
     {
         group: 'HTTPS certificate', key: 'acmeDirectory', env: 'ODIN_ACME_DIRECTORY', type: 'string', fallback: 'production', label: "Let's Encrypt: directory", max: 500,
         hint: 'production, staging (for trying it out), or the directory URL of another ACME certificate authority.',
@@ -349,7 +398,8 @@ function describe() {
         };
         if (setting.secret) {
             item.secret = true;
-            item.isSet = Boolean(config[setting.key]);
+            // What is saved counts, also when the server only uses it from the next start
+            item.isSet = Boolean(wanted(setting));
         } else {
             item.value = config[setting.key];
             item.fallback = setting.fallback;
@@ -398,6 +448,16 @@ function update(changes) {
         const key = 'httpsEnabled' in changes && !('httpEnabled' in changes) ? 'httpsEnabled' : 'httpEnabled';
         details[key] ??= 'HTTP or HTTPS has to stay enabled';
     }
+    // The names and the way they are proven have to fit together, or the certificate cannot be requested at the next start
+    const touches = ['httpsDomains', 'acmeChallenge', 'acmeDnsProvider', 'acmeDelegationZone', 'acmeCloudflareToken'].some((key) => key in changes);
+    if (touches && !Object.keys(details).length && after('httpsCertSource') === 'letsencrypt') {
+        if (after('acmeChallenge') === 'http-01' && after('httpsDomains').some((name) => name.startsWith('*.'))) {
+            details.acmeChallenge = 'A wildcard name can only be proven through DNS: choose the DNS challenge, or remove the wildcard';
+        }
+        if (after('acmeChallenge') !== 'http-01' && after('acmeDnsProvider') === 'delegation' && !after('acmeDelegationZone')) {
+            details.acmeDelegationZone = 'The delegation needs a zone of this server';
+        }
+    }
     if (Object.keys(details).length) throw invalid(details);
 
     const changed = Object.keys(changes).filter((key) => !same(stored[key], next[key]));
@@ -405,7 +465,8 @@ function update(changes) {
 
     fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
     const temporary = `${SETTINGS_FILE}.tmp`;
-    fs.writeFileSync(temporary, `${JSON.stringify(next, null, 4)}\n`);
+    // Holds passwords and tokens: only the owner reads it
+    fs.writeFileSync(temporary, `${JSON.stringify(next, null, 4)}\n`, { mode: 0o600 });
     fs.renameSync(temporary, SETTINGS_FILE);
     stored = next;
 

@@ -14,6 +14,7 @@ const queryLogService = require('../serverService/queryLogService');
 const build = require('../serverService/buildInfo');
 const searchService = require('../serverService/searchService');
 const statusService = require('../serverService/statusService');
+const accessService = require('../serverService/accessService');
 const zoneService = require('../serverService/zoneService');
 const mailService = require('../serverService/mailService');
 const passwordResetService = require('../serverService/passwordResetService');
@@ -58,6 +59,8 @@ function status() {
             port: config.nsServerPort,
             tcp: config.nsTcpEnabled,
             queries: { ...statusService.queries },
+            // Who may use this server as a resolver: the list, and how many were refused
+            recursion: accessService.state(),
         },
         zones: { enabled: config.nsZonesEnabled, refresh: config.nsZoneRefresh, ...zoneService.state() },
         blocking: { refresh: config.nsBlocklistRefresh, ...blockService.state() },
@@ -206,6 +209,11 @@ function createRouter() {
 
     router.get('/status', authenticate, (req, res) => {
         res.json(status());
+    });
+
+    // The clients that were refused most often: addresses of clients are personal data, so for the monitoring roles only
+    router.get('/refused', authenticate, requireRole(...config.monitoringRoles), (req, res) => {
+        res.json({ total: accessService.state().refused, clients: accessService.refusedClients() });
     });
 
     // The history of the queries, the memory and the cache, for the graphs of the dashboard

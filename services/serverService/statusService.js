@@ -16,10 +16,10 @@ const RANGES = {
     '24h': { seconds: 24 * 3600, minutes: true },
 };
 
-const KINDS = ['zones', 'records', 'blocked', 'forwarded', 'failed'];
+const KINDS = ['zones', 'records', 'blocked', 'forwarded', 'failed', 'refused'];
 
 const startedAt = new Date();
-const queries = { total: 0, zones: 0, records: 0, blocked: 0, forwarded: 0, failed: 0 };
+const queries = { total: 0, zones: 0, records: 0, blocked: 0, forwarded: 0, failed: 0, refused: 0 };
 
 // Since the last sample
 let window = newWindow();
@@ -30,11 +30,11 @@ const minutes = []; // samples of a minute
 let timer = null;
 
 function newWindow() {
-    return { zones: 0, records: 0, blocked: 0, forwarded: 0, failed: 0, timed: 0, ms: 0 };
+    return { zones: 0, records: 0, blocked: 0, forwarded: 0, failed: 0, refused: 0, timed: 0, ms: 0 };
 }
 
 // kind: 'zones' or 'records' (answered from our own zones or standalone
-// records), 'blocked' (a name of a blocklist), 'forwarded' or 'failed'.
+// records), 'blocked' (a name of a blocklist), 'forwarded', 'refused' (a client that may not use the resolver) or 'failed'.
 // ms: how long the answer took.
 function countQuery(kind, ms) {
     queries.total++;

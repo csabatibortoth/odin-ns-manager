@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.8.1** - see the [release notes](#release-notes).
+Current version: **2.9.0** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -203,6 +203,7 @@ environment variable, what was saved in the browser, its default.
 | `ODIN_NS_ZONES_ENABLED` | `true` | Answer the zones and records of the database. Set to `false` to forward every query |
 | `ODIN_NS_ZONE_REFRESH` | `10` | Seconds between two checks of the database for changed zones |
 | `ODIN_NS_UPSTREAM` | `1.1.1.1,1.0.0.1` | Comma separated DNS servers that are asked for unknown names. Empty means the DNS servers of the system |
+| `ODIN_NS_RECURSION_ALLOWED` | loopback and private networks | Comma separated addresses and CIDR ranges of the clients that may use this server as a resolver. Everybody else gets `REFUSED` for names that are not in one of your own zones. See [Who may use the resolver](#who-may-use-the-resolver) |
 | `ODIN_NS_UPSTREAM_TIMEOUT` / `ODIN_NS_UPSTREAM_TRIES` | `2000` / `2` | Milliseconds to wait for an upstream answer, and the number of attempts |
 | `ODIN_NS_CACHE_ENABLED` | `true` | Keep answers in memory |
 | `ODIN_NS_CACHE_MAX_ENTRIES` | `10000` | Size of the cache; the oldest entry is dropped when it is full |
@@ -226,6 +227,11 @@ environment variable, what was saved in the browser, its default.
 | `ODIN_HTTPS_DOMAINS` | – | `letsencrypt`: the public names of this server, comma separated. Required |
 | `ODIN_ACME_EMAIL` / `ODIN_ACME_DIRECTORY` | – / `production` | `letsencrypt`: the e-mail of the account, and `production`, `staging` or the directory URL of another ACME authority |
 | `ODIN_ACME_HTTP_PORT` / `ODIN_ACME_FOLDER` | `80` / `sslcert/letsencrypt` | `letsencrypt`: the port that answers the challenge, and where the keys are kept |
+| `ODIN_ACME_CHALLENGE` | `http-01` | `letsencrypt`: how the names are proven: `http-01` (port 80), `dns-01` (a TXT record; wildcards), or `auto` (DNS for a wildcard, HTTP for the rest) |
+| `ODIN_ACME_DNS_PROVIDER` | `zones` | `dns-01`: where the record is written: `zones` (a zone of this server), `delegation` (a CNAME at any DNS to a zone of this server), `cloudflare` |
+| `ODIN_ACME_DELEGATION_ZONE` | – | `delegation`: a zone hosted on this server, e.g. `acme.example.net` |
+| `ODIN_ACME_CLOUDFLARE_TOKEN` / `ODIN_ACME_CLOUDFLARE_TOKEN_FILE` / `ODIN_ACME_CLOUDFLARE_ZONE_ID` | – | `cloudflare`: an API token limited to one zone (`Zone: DNS: Edit`, `Zone: Zone: Read`), or a file whose first line is the token (only from the environment); the zone id is optional |
+| `ODIN_ACME_DNS_WAIT` / `ODIN_ACME_DNS_SETTLE` | `120` / `60` | `dns-01`: seconds to wait until the record is answered, and then the seconds to wait before the authority is asked (0 switches it off; needs freya-ns-api 2.5.1) |
 | `ODIN_DOCS_ENABLED` | `true` | The Swagger UI of the API at `/api/docs` |
 | `ODIN_MONITORING_ROLES` | `admin` | Roles that may read the query log, the clients and the metrics |
 | `ODIN_AUTH_ENABLED` | `true` | Set to `false` to skip token checks. For local development only |
@@ -415,6 +421,35 @@ and an upstream that hands over the DNSSEC records, which nearly all do.
 
 ![Lookup of a signed name: DNSSEC signed and valid](docs/screenshots/lookup-dnssec.png)
 
+### Who may use the resolver
+
+A DNS server that answers recursive questions for everybody who can reach it is
+an *open resolver*: it is used to amplify attacks on other networks. So the
+names that are **not** in one of your own zones (or standalone records) are
+answered only to the clients in `ODIN_NS_RECURSION_ALLOWED`; everybody else gets
+`REFUSED`. Your own zones are answered for anybody, which is what an
+authoritative server is for, and so is a question from this machine itself.
+
+The default is safe: the loopback range, the private networks (`10.0.0.0/8`,
+`172.16.0.0/12`, `192.168.0.0/16`), the shared address space of VPNs such as
+Tailscale (`100.64.0.0/10`), link-local addresses, and their IPv6 counterparts
+(`::1`, `fc00::/7`, `fe80::/10`). Set the list in the settings (group
+*Forwarding*; it applies at once) or in the environment, e.g.
+`ODIN_NS_RECURSION_ALLOWED=192.168.1.0/24,203.0.113.7`. An empty list serves
+nobody but this machine. To run a public resolver on purpose, add `0.0.0.0/0`
+and `::/0`; do that only behind your own rate limiting.
+
+The dashboard counts the refused queries (a tile, a row in the DNS server card, and the
+counter `refused` of the Heimdall metric `aesir.dns.queries`). Administrators and
+the monitoring roles can see the clients that were refused most often at
+`GET /api/service/refused`. That table is kept in memory only (at most 200
+clients, it is gone at a restart), and refused queries are not written to the
+query log: anybody on the internet can send them.
+
+**When upgrading:** a server that was reachable from the internet and answered
+everybody now refuses the public clients. The clients of your own networks are
+unaffected. If you serve other public addresses on purpose, add their ranges.
+
 ### Forwarding
 
 Every other query is answered with the records the upstream DNS servers have
@@ -519,7 +554,29 @@ one of two sources, `ODIN_HTTPS_CERT_SOURCE`:
   must lead to this server in the public DNS, and port 80 must reach it from
   the internet. Try it with `ODIN_ACME_DIRECTORY=staging` first.
 
-The Certificate page shows the certificate that is served and when it expires.
+  With `ODIN_ACME_CHALLENGE=dns-01` (or `auto`) the names are proven through a
+  TXT record instead of port 80, which also allows wildcard names such as
+  `*.example.com`. The record is written into a zone of this server
+  (`zones`), through a CNAME that you add once at any DNS host
+  (`delegation`), or through the API of Cloudflare (`cloudflare`). The settings
+  are in the group *HTTPS certificate*; they take effect at the next start. The
+  Cloudflare token is write-only: it is never shown again, and the settings file
+  is readable by its owner only. See the
+  [freya-ns-api documentation](https://github.com/csabatibortoth/freya-ns-api#dns-validation-dns-01).
+  Needs freya-ns-api 2.4.0 or later.
+
+The Certificate page has a button **Test with Let's Encrypt staging**: it runs a
+whole order with the real settings (names, challenge, provider) against the
+staging authority, shows every step (`record written`, `record visible`,
+`record removed`, `authority validated the names`, ...) and the reason when one
+fails, and installs nothing. Use it after changing the names, the challenge or
+the provider (needs freya-ns-api 2.5.0 or later; the button is not shown with an
+older one).
+
+The Certificate page shows the certificate that is served and when it expires,
+how its names are proven, and, for the delegation, the CNAME records to add at
+the DNS of your domains. The Heimdall plugin sends `aesir.certificate.days_left`,
+and a mail is sent when a renewal fails or fewer than 14 days are left.
 The keys are kept under `sslcert/`, which is not part of the repository. See
 the [freya-ns-api documentation](https://github.com/csabatibortoth/freya-ns-api#https)
 for the details.
@@ -739,6 +796,20 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.9.0
+
+#### Security
+
+- **No open resolver.** Names that are not in your own zones are answered only to the clients of `ODIN_NS_RECURSION_ALLOWED` (default: loopback and private networks); others get `REFUSED`. Own zones stay open to everybody. See [Who may use the resolver](#who-may-use-the-resolver). **Check this when upgrading** if clients with public addresses use this server.
+- The settings file is written readable by its owner only; it holds passwords and tokens.
+
+#### New
+
+- **Let's Encrypt with DNS validation** (needs freya-ns-api 2.4.0): wildcard names and no port 80, through a zone of this server, a CNAME at any DNS host, or Cloudflare. The Certificate page shows how the names are proven and the CNAME records to add.
+- **Test button** on the Certificate page: a whole order against the Let's Encrypt staging authority with the real settings, step by step, nothing installed (freya-ns-api 2.5.0).
+- **Certificate alerts**: the metrics `aesir.certificate.days_left` and `aesir.certificate.renewal_failing`, and a mail when a renewal fails or fewer than 14 days are left.
+- The dashboard counts refused queries; the Heimdall metric `aesir.dns.queries` has the kind `refused`.
 
 ### 2.8.1
 

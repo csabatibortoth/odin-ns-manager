@@ -94,3 +94,35 @@ test('what would lock everybody out is refused', () => {
     refused({ type: 'PROD' }, 'type'); // the secret is still the one of the development
     refused({ httpEnabled: false }, 'httpEnabled'); // HTTPS is not enabled either
 });
+
+test('the DNS challenge of Let\'s Encrypt: defaults change nothing, the token is write-only', () => {
+    assert.equal(config.acmeChallenge, 'http-01');
+    assert.equal(config.acmeDnsProvider, 'zones');
+    assert.equal(config.acmeCloudflareToken, '');
+    assert.equal('value' in setting('acmeCloudflareToken'), false);
+    assert.equal(setting('acmeCloudflareToken').secret, true);
+    // a path from the browser would let an admin send the first line of any file to Cloudflare: only the environment
+    assert.throws(() => config.update({ acmeCloudflareTokenFile: '/etc/passwd' }), (err) => Boolean(err.details.acmeCloudflareTokenFile));
+});
+
+test('a wildcard needs the DNS challenge; the delegation needs its zone; a token is saved but never shown', () => {
+    const refused = (changes, key) => assert.throws(() => config.update(changes), (err) => Boolean(err.details[key]));
+    config.update({ httpsCertSource: 'letsencrypt' });
+    refused({ httpsDomains: ['*.example.com'] }, 'acmeChallenge');
+    refused({ httpsDomains: ['not a name'] }, 'httpsDomains');
+    refused({ httpsDomains: ['*.example.com'], acmeChallenge: 'dns-01', acmeDnsProvider: 'delegation' }, 'acmeDelegationZone');
+
+    assert.deepEqual(
+        config.update({ httpsDomains: ['example.com', '*.example.com'], acmeChallenge: 'dns-01', acmeDnsProvider: 'delegation', acmeDelegationZone: 'acme.example.net' }).sort(),
+        ['acmeChallenge', 'acmeDelegationZone', 'acmeDnsProvider', 'httpsDomains']
+    );
+    config.update({ acmeDnsProvider: 'cloudflare', acmeCloudflareToken: 'cf-secret-token' });
+    assert.equal(JSON.stringify(config.describe()).includes('cf-secret-token'), false);
+    assert.equal(setting('acmeCloudflareToken').isSet, true);
+    // saved for the next start, in a file only the owner can read
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).acmeCloudflareToken, 'cf-secret-token');
+    assert.equal(fs.statSync(file).mode & 0o077, 0);
+    // empty keeps nothing: null removes the setting
+    config.update({ acmeCloudflareToken: null, acmeChallenge: null, acmeDnsProvider: null, acmeDelegationZone: null, httpsDomains: null });
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).acmeCloudflareToken, undefined);
+});

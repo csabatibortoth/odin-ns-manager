@@ -9,6 +9,8 @@ const searchService = require('./services/serverService/searchService');
 const statusService = require('./services/serverService/statusService');
 const zoneService = require('./services/serverService/zoneService');
 const syncService = require('./services/serverService/syncService');
+const certificateWatch = require('./services/serverService/certificateWatch');
+const accessService = require('./services/serverService/accessService');
 const pluginService = require('./services/pluginService/pluginService');
 
 const nameServer = named.createServer({ name: config.serverName });
@@ -32,6 +34,16 @@ nameServer.on('query', async (query) => {
         // Our own zones and standalone records first, then the blocking;
         // every other name is looked up at the upstream
         let answered = await zoneService.resolve(query);
+        // Not one of our names: that is a recursive question, and only the clients of the list may ask it
+        // (otherwise this server is an open resolver). REFUSED, and nothing is written to the query log: anybody
+        // on the internet can send these.
+        if (!answered && !accessService.mayRecurse(query._client?.address)) {
+            query.setError('erefuse');
+            accessService.noteRefused(query._client?.address);
+            nameServer.send(query);
+            statusService.countQuery('refused');
+            return;
+        }
         if (!answered && blockService.resolve(query)) answered = 'blocked';
         if (!answered) await searchService.resolve(query);
         nameServer.send(query);
@@ -101,6 +113,8 @@ async function main() {
             if (config.uiEnabled) console.log('User interface is at the address above');
             const running = await pluginService.start();
             if (config.pluginsEnabled.length) console.log('%d of %d plugin(s) are running', running, config.pluginsEnabled.length);
+            // A mail when the certificate of HTTPS can not be renewed, or is about to expire
+            certificateWatch.start();
             // A secondary copies what the primary has; the DNS server picks it up like any other change
             syncService.start((result) => {
                 zoneService.refresh();
@@ -123,6 +137,7 @@ async function main() {
         blockService.stop();
         statusService.stop();
         syncService.stop();
+        certificateWatch.stop();
         await pluginService.stop().catch(() => {});
         await queryLogService.stop().catch(() => {});
         await stopApi().catch(() => {});

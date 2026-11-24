@@ -46,7 +46,7 @@ const exportRecord = ({ name, type, ttl, data, active }) => ({ name, type, ttl, 
 async function exportZones() {
     const [zones, records] = await Promise.all([
         Zone.find().sort({ name: 1 }).lean(),
-        Record.find({ zone: { $ne: null } }).sort({ name: 1, type: 1, _id: 1 }).lean(),
+        Record.find({ zone: { $ne: null }, transient: { $ne: true } }).sort({ name: 1, type: 1, _id: 1 }).lean(),
     ]);
 
     const byZone = new Map(zones.map((zone) => [String(zone._id), []]));
@@ -84,7 +84,7 @@ async function exportData(query = {}, actor) {
 
     const data = {};
     if (sections.includes('zones')) data.zones = await exportZones();
-    if (sections.includes('records')) data.records = (await Record.find({ zone: null }).sort({ name: 1, type: 1, _id: 1 }).lean()).map(exportRecord);
+    if (sections.includes('records')) data.records = (await Record.find({ zone: null, transient: { $ne: true } }).sort({ name: 1, type: 1, _id: 1 }).lean()).map(exportRecord);
     if (sections.includes('blocking')) data.blocking = await exportBlocking();
     if (sections.includes('users')) data.users = await exportUsers();
 
