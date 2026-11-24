@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.9.0** - see the [release notes](#release-notes).
+Current version: **2.10.0** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -204,6 +204,8 @@ environment variable, what was saved in the browser, its default.
 | `ODIN_NS_ZONE_REFRESH` | `10` | Seconds between two checks of the database for changed zones |
 | `ODIN_NS_UPSTREAM` | `1.1.1.1,1.0.0.1` | Comma separated DNS servers that are asked for unknown names. Empty means the DNS servers of the system |
 | `ODIN_NS_RECURSION_ALLOWED` | loopback and private networks | Comma separated addresses and CIDR ranges of the clients that may use this server as a resolver. Everybody else gets `REFUSED` for names that are not in one of your own zones. See [Who may use the resolver](#who-may-use-the-resolver) |
+| `ODIN_NS_RATE_LIMIT_ENABLED` / `ODIN_NS_RATE_LIMIT_PER_SECOND` | `true` / `20` | Rate limit of the answers to one client network (UDP): identical answers per second, see [Rate limiting](#rate-limiting) |
+| `ODIN_NS_RATE_LIMIT_SLIP` / `ODIN_NS_RATE_LIMIT_TRUST_RESOLVERS` | `2` / `true` | Every n-th limited answer is sent as a short "ask again over TCP" (0 never, 1 always); do not limit the clients of the resolver list |
 | `ODIN_NS_UPSTREAM_TIMEOUT` / `ODIN_NS_UPSTREAM_TRIES` | `2000` / `2` | Milliseconds to wait for an upstream answer, and the number of attempts |
 | `ODIN_NS_CACHE_ENABLED` | `true` | Keep answers in memory |
 | `ODIN_NS_CACHE_MAX_ENTRIES` | `10000` | Size of the cache; the oldest entry is dropped when it is full |
@@ -228,9 +230,12 @@ environment variable, what was saved in the browser, its default.
 | `ODIN_ACME_EMAIL` / `ODIN_ACME_DIRECTORY` | – / `production` | `letsencrypt`: the e-mail of the account, and `production`, `staging` or the directory URL of another ACME authority |
 | `ODIN_ACME_HTTP_PORT` / `ODIN_ACME_FOLDER` | `80` / `sslcert/letsencrypt` | `letsencrypt`: the port that answers the challenge, and where the keys are kept |
 | `ODIN_ACME_CHALLENGE` | `http-01` | `letsencrypt`: how the names are proven: `http-01` (port 80), `dns-01` (a TXT record; wildcards), or `auto` (DNS for a wildcard, HTTP for the rest) |
-| `ODIN_ACME_DNS_PROVIDER` | `zones` | `dns-01`: where the record is written: `zones` (a zone of this server), `delegation` (a CNAME at any DNS to a zone of this server), `cloudflare` |
+| `ODIN_ACME_DNS_PROVIDER` | `zones` | `dns-01`: where the record is written: `zones` (a zone of this server), `delegation` (a CNAME at any DNS to a zone of this server), `cloudflare`, `rfc2136` (a signed DNS UPDATE to any name server that takes dynamic updates), `hook` (a program of yours) |
 | `ODIN_ACME_DELEGATION_ZONE` | – | `delegation`: a zone hosted on this server, e.g. `acme.example.net` |
 | `ODIN_ACME_CLOUDFLARE_TOKEN` / `ODIN_ACME_CLOUDFLARE_TOKEN_FILE` / `ODIN_ACME_CLOUDFLARE_ZONE_ID` | – | `cloudflare`: an API token limited to one zone (`Zone: DNS: Edit`, `Zone: Zone: Read`), or a file whose first line is the token (only from the environment); the zone id is optional |
+| `ODIN_ACME_RFC2136_SERVER` / `_ZONE` / `_KEY_NAME` / `_KEY_ALGORITHM` | – / – / – / `hmac-sha256` | `rfc2136`: the master name server (`host` or `host:port`, reached over TCP), the zone to update, and the name and algorithm (`hmac-sha256`, `-sha384`, `-sha512`) of the TSIG key |
+| `ODIN_ACME_RFC2136_KEY_SECRET` / `ODIN_ACME_RFC2136_KEY_FILE` | – | `rfc2136`: the base64 secret of the key (write-only in the settings), or a file whose first line is the secret (preferred; environment only; the file must be mode 600 or 400 and owned by root or the user of Odin, not supported on Windows). Let the key change only `_acme-challenge` TXT records on the name server |
+| `ODIN_ACME_HOOK` / `ODIN_ACME_HOOK_TIMEOUT` | – / `60` | `hook`: the absolute path of your program, called as `<program> create\|remove <name> <value>`, and the seconds before it is stopped. **The path can only be set in the environment**, the program and every folder above it must not be writable by others, and it is not available on Windows (a setting in the user interface could make the server run any program). The program must not be writable by others; it gets an empty environment. See the README of freya-ns-api |
 | `ODIN_ACME_DNS_WAIT` / `ODIN_ACME_DNS_SETTLE` | `120` / `60` | `dns-01`: seconds to wait until the record is answered, and then the seconds to wait before the authority is asked (0 switches it off; needs freya-ns-api 2.5.1) |
 | `ODIN_DOCS_ENABLED` | `true` | The Swagger UI of the API at `/api/docs` |
 | `ODIN_MONITORING_ROLES` | `admin` | Roles that may read the query log, the clients and the metrics |
@@ -449,6 +454,26 @@ query log: anybody on the internet can send them.
 **When upgrading:** a server that was reachable from the internet and answered
 everybody now refuses the public clients. The clients of your own networks are
 unaffected. If you serve other public addresses on purpose, add their ranges.
+
+### Rate limiting
+
+An attacker can send questions with a **forged sender address**: the answers then go to the victim, and a DNS server that answers everybody is a
+tool for that (reflection). Odin limits what it sends back from its own data, over UDP:
+
+- **Identical answers** to one client network (a /24 of IPv4, a /56 of IPv6) are limited to `ODIN_NS_RATE_LIMIT_PER_SECOND` (default 20, with a burst of the same size). The same
+  name and type from the same network count together.
+- **"No such name"** answers are counted per zone (random names below your zone cannot make endless fresh counters), and **REFUSED** answers per client network.
+- The surplus is dropped. Every `ODIN_NS_RATE_LIMIT_SLIP`-th limited answer (default 2) is sent as a tiny **truncated** answer instead (TC flag, nothing in it): a real client that was limited
+  asks again over TCP, which cannot be forged and is not limited; the victim of a forged question gets almost nothing.
+- **Not limited:** TCP, the machine itself, the clients of the resolver list `ODIN_NS_RECURSION_ALLOWED` (switch `ODIN_NS_RATE_LIMIT_TRUST_RESOLVERS` off to limit them too: a
+  whole office asking the same name at once is normal), forwarded and blocked answers (only those clients get them).
+- **Size of UDP answers:** an answer that does not fit in a UDP packet is sent as a truncated one (512 bytes, or what the client announces with EDNS0, at most 1232 bytes: no fragmented packets).
+  The client then asks over TCP. (Odin does not answer with an EDNS0 option of its own yet.)
+- Limited answers are counted (dashboard tile "Rate limited", the DNS server card, the status API `dns.rateLimit`, the Heimdall metric `aesir.dns.queries{kind=limited}`) and are **not written to the query log**.
+- The settings are live: a change takes effect at once. The table of counters is bounded (50,000 entries in memory).
+
+Limits: the counters are per name for positive answers, so a flood of different existing names (for example a wildcard record) is not slowed down by the name; and the
+clients that are behind one NAT address share one network.
 
 ### Forwarding
 
@@ -796,6 +821,24 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.10.0
+
+#### Security
+
+- **Rate limiting of the answers** (UDP): identical answers to one client network are limited per second, the surplus is dropped or answered with a short "ask again over TCP" (slip), "no such name" and REFUSED answers are limited too, and an answer that does not fit in a UDP packet is cut to a truncated one. The clients of the resolver list, TCP and this machine are not limited. See [Rate limiting](#rate-limiting). On by default (20 identical answers per second per client network): if a public client network legitimately asks the same name more often, raise `ODIN_NS_RATE_LIMIT_PER_SECOND`.
+- A question packet that was cut off could have confused the reading of the EDNS0 option; it is read with bounds checks (the tests send such packets to the running server).
+
+#### New
+
+- **DNS validation through RFC 2136 + TSIG** and **through your own program**: two more places where the TXT record of the Let's Encrypt DNS challenge can be written (freya-ns-api 2.6.0). With `rfc2136` any
+  name server that takes dynamic updates (BIND, Knot, PowerDNS ...) is updated with a signed DNS UPDATE; the settings are the name server, the zone and the key (the secret is write-only).
+  With `hook` a program of the administrator sets and removes the record: its path is **environment only** (`ODIN_ACME_HOOK`) and the settings page cannot change it.
+  The Test button of the Certificate page works with both.
+
+#### Upgrading from 2.9.0
+
+- Nothing changes unless you choose one of the new providers.
 
 ### 2.9.0
 

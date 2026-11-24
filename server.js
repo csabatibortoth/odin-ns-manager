@@ -11,6 +11,7 @@ const zoneService = require('./services/serverService/zoneService');
 const syncService = require('./services/serverService/syncService');
 const certificateWatch = require('./services/serverService/certificateWatch');
 const accessService = require('./services/serverService/accessService');
+const rateLimitService = require('./services/serverService/rateLimitService');
 const pluginService = require('./services/pluginService/pluginService');
 
 const nameServer = named.createServer({ name: config.serverName });
@@ -24,6 +25,35 @@ function listen(method, transport) {
             resolve();
         });
     });
+}
+
+// The clients that the rate limit leaves alone: this machine, and (when switched on) the clients that may use the resolver
+const exemptFromLimit = (address) => accessService.isOwn(address) || (config.nsRateLimitTrustResolvers && accessService.mayRecurse(address));
+
+// Sends the answer, after the rate limit: nothing at all for a limited one, a short "ask again over TCP" for every n-th,
+// and the same short answer for an answer that does not fit in a UDP packet. kind: 'answer', 'nxdomain' or 'refused'.
+// kind null: no rate limit for this answer (forwarded and blocked ones: only the clients of the resolver list get them),
+// only the size of the packet is checked. Returns 'limited' when the answer was dropped or cut short by the limit.
+function sendLimited(query, kind) {
+    const questionPacket = query._raw?.buf; // query.encode() below replaces it by the answer
+    const verdict = kind === null ? 'send' : rateLimitService.decide({ config, exempt: exemptFromLimit }, {
+        address: query._client?.address, transport: query.transport(), kind, name: query.name(), type: query.type(), zone: zoneService.zoneOf(query.name()),
+    });
+    if (verdict === 'drop') return 'limited';
+    if (verdict === 'slip') {
+        rateLimitService.truncate(query);
+        nameServer.send(query);
+        return 'limited';
+    }
+    if (query.transport() === 'udp') {
+        query.encode();
+        if (query._raw.len > rateLimitService.udpLimit(questionPacket)) {
+            rateLimitService.truncate(query);
+            rateLimitService.noteTruncated();
+        }
+    }
+    nameServer.send(query);
+    return null;
 }
 
 nameServer.on('query', async (query) => {
@@ -40,15 +70,17 @@ nameServer.on('query', async (query) => {
         if (!answered && !accessService.mayRecurse(query._client?.address)) {
             query.setError('erefuse');
             accessService.noteRefused(query._client?.address);
-            nameServer.send(query);
-            statusService.countQuery('refused');
+            statusService.countQuery(sendLimited(query, 'refused') ?? 'refused');
             return;
         }
         if (!answered && blockService.resolve(query)) answered = 'blocked';
         if (!answered) await searchService.resolve(query);
-        nameServer.send(query);
+        const own = answered === 'zones' || answered === 'records';
+        const limited = sendLimited(query, own ? (query._flags.rcode === 3 ? 'nxdomain' : 'answer') : null);
         const ms = performance.now() - started;
-        statusService.countQuery(answered || 'forwarded', ms);
+        statusService.countQuery(limited ?? (answered || 'forwarded'), ms);
+        // A limited answer is not written to the query log: a flood from the internet must not fill the database
+        if (limited) return;
         queryLogService.note(query, { blocked: answered === 'blocked', ms });
     } catch (err) {
         statusService.countQuery('failed');

@@ -457,7 +457,7 @@ const schemas = {
                 description: "How the names are proven to Let's Encrypt. `null` for a custom certificate",
                 properties: {
                     type: { type: 'string', enum: ['http-01', 'dns-01', 'auto'] },
-                    provider: { type: 'string', nullable: true, example: 'delegation', description: 'dns-01: where the TXT record is written (`zones`, `cloudflare`, `delegation`). `null` for http-01' },
+                    provider: { type: 'string', nullable: true, example: 'delegation', description: 'dns-01: where the TXT record is written (`zones`, `cloudflare`, `delegation`, `rfc2136`, `hook`). `null` for http-01' },
                     recordsToAdd: {
                         type: 'array',
                         description: 'Provider `delegation`: the records the owner of each name adds, once, at the real DNS. Empty for the others',

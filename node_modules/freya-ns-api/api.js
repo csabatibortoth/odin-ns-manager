@@ -1,4 +1,4 @@
-/* Freya NS API v2.5.1 Server */
+/* Freya NS API v2.6.0 Server */
 
 const config = require('./config/config');
 const logService = require('./services/logService/logService');

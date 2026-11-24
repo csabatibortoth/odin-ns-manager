@@ -62,6 +62,26 @@ const SETTINGS = [
     },
 
     {
+        group: 'Rate limiting', key: 'nsRateLimitEnabled', env: 'ODIN_NS_RATE_LIMIT_ENABLED', type: 'bool', fallback: true, live: true,
+        label: 'Limit the answers to one client network',
+        hint: 'Protects others from this server: an attacker can send questions with a forged sender address, and the answers would go to the victim. Identical answers (UDP) to one client network are limited per second; see the settings below. TCP is never limited.',
+    },
+    {
+        group: 'Rate limiting', key: 'nsRateLimitPerSecond', env: 'ODIN_NS_RATE_LIMIT_PER_SECOND', type: 'int', fallback: 20, live: true, min: 1, max: 1000,
+        label: 'Identical answers per second to one client network',
+        hint: 'A client network is a /24 (IPv4) or a /56 (IPv6). Counted per name and type for answers, per zone for "no such name", per network for REFUSED.',
+    },
+    {
+        group: 'Rate limiting', key: 'nsRateLimitSlip', env: 'ODIN_NS_RATE_LIMIT_SLIP', type: 'int', fallback: 2, live: true, min: 0, max: 10,
+        label: 'Slip: every n-th limited answer is sent as a short "ask again over TCP"',
+        hint: 'A real client that is limited retries over TCP; the victim of a forged question gets little. 1 answers every limited question that way, 0 never.',
+    },
+    {
+        group: 'Rate limiting', key: 'nsRateLimitTrustResolvers', env: 'ODIN_NS_RATE_LIMIT_TRUST_RESOLVERS', type: 'bool', fallback: true, live: true,
+        label: 'Do not limit the clients that may use this server as a resolver',
+        hint: 'The networks of the resolver list (private networks by default) are yours: many of them ask the same name at once. Switch off to limit them too.',
+    },
+    {
         group: 'Forwarding', key: 'nsRecursionAllowed', env: 'ODIN_NS_RECURSION_ALLOWED', type: 'list', label: 'Clients that may use this server as a resolver', live: true,
         fallback: ['127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '100.64.0.0/10', '169.254.0.0/16', '::1/128', 'fc00::/7', 'fe80::/10'],
         hint: 'CIDR ranges or addresses, comma separated. Names that are not in one of your own zones are answered only to these clients; everybody else gets REFUSED. ' +
@@ -161,6 +181,8 @@ const SETTINGS = [
             { value: 'zones', text: 'A zone of this server (no account)' },
             { value: 'delegation', text: 'Any DNS: a CNAME to a zone of this server' },
             { value: 'cloudflare', text: 'Cloudflare (API token)' },
+            { value: 'rfc2136', text: 'Any name server that takes dynamic updates (RFC 2136 + TSIG key)' },
+            { value: 'hook', text: 'A program of yours (set in the environment: ODIN_ACME_HOOK)' },
         ],
         hint: 'The Certificate page lists the CNAME records to add for the delegation.',
     },
@@ -178,6 +200,40 @@ const SETTINGS = [
         group: 'HTTPS certificate', key: 'acmeCloudflareZoneId', env: 'ODIN_ACME_CLOUDFLARE_ZONE_ID', type: 'string', fallback: '', label: "Let's Encrypt, Cloudflare: zone id", empty: true, max: 64,
         hint: 'Optional. Without it the zone is found by name.',
         check: (value) => !value || /^[A-Za-z0-9]+$/.test(value) || 'letters and digits only',
+    },
+    {
+        group: 'HTTPS certificate', key: 'acmeRfc2136Server', env: 'ODIN_ACME_RFC2136_SERVER', type: 'string', fallback: '', label: "Let's Encrypt, RFC 2136: master name server", empty: true, max: 260,
+        hint: 'Host name or address, with an optional :port (53 if omitted). Reached over TCP. The master of the zone, not a secondary.',
+        check: (value) => !value || /^(?:\[[0-9a-fA-F:.]+\]|[A-Za-z0-9._-]+)(?::\d{1,5})?$/.test(value) || 'a host name or address, optionally with :port',
+    },
+    {
+        group: 'HTTPS certificate', key: 'acmeRfc2136Zone', env: 'ODIN_ACME_RFC2136_ZONE', type: 'string', fallback: '', label: "Let's Encrypt, RFC 2136: zone to update", empty: true, max: 200,
+        hint: 'For example example.com. Every _acme-challenge name has to be inside it.',
+        check: (value) => !value || HOST_NAME.test(value) || 'must be a host name',
+    },
+    {
+        group: 'HTTPS certificate', key: 'acmeRfc2136KeyName', env: 'ODIN_ACME_RFC2136_KEY_NAME', type: 'string', fallback: '', label: "Let's Encrypt, RFC 2136: TSIG key name", empty: true, max: 200,
+        hint: 'The name in the key "..." statement of the name server.',
+        check: (value) => !value || /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(value) || 'letters, digits, dots, - and _ only',
+    },
+    {
+        group: 'HTTPS certificate', key: 'acmeRfc2136KeyAlgorithm', env: 'ODIN_ACME_RFC2136_KEY_ALGORITHM', type: 'string', fallback: 'hmac-sha256', label: "Let's Encrypt, RFC 2136: TSIG algorithm",
+        options: [
+            { value: 'hmac-sha256', text: 'hmac-sha256' },
+            { value: 'hmac-sha384', text: 'hmac-sha384' },
+            { value: 'hmac-sha512', text: 'hmac-sha512' },
+        ],
+        hint: 'MD5 and SHA-1 keys are refused.',
+    },
+    {
+        group: 'HTTPS certificate', key: 'acmeRfc2136KeySecret', env: 'ODIN_ACME_RFC2136_KEY_SECRET', type: 'string', fallback: '', label: "Let's Encrypt, RFC 2136: TSIG key secret", empty: true, secret: true, max: 1024,
+        hint: 'The base64 secret (tsig-keygen makes one). Allow the key to change only _acme-challenge TXT records on the name server. Not shown again.',
+        check: (value) => !value || /^[A-Za-z0-9+/]+={0,2}$/.test(value) || 'base64 only',
+    },
+    { group: 'HTTPS certificate', key: 'acmeRfc2136KeyFile', env: 'ODIN_ACME_RFC2136_KEY_FILE', type: 'string', fallback: '', label: "Let's Encrypt, RFC 2136: file with the TSIG key secret", editable: false, empty: true },
+    { group: 'HTTPS certificate', key: 'acmeHook', env: 'ODIN_ACME_HOOK', type: 'string', fallback: '', label: "Let's Encrypt, hook: program", editable: false, empty: true },
+    {
+        group: 'HTTPS certificate', key: 'acmeHookTimeout', env: 'ODIN_ACME_HOOK_TIMEOUT', type: 'int', fallback: 60, label: "Let's Encrypt, hook: seconds before the program is stopped", min: 1, max: 300,
     },
     {
         group: 'HTTPS certificate', key: 'acmeDnsSettle', env: 'ODIN_ACME_DNS_SETTLE', type: 'int', fallback: 60, label: "Let's Encrypt, DNS challenge: seconds to wait after the record is visible", min: 0, max: 120,
@@ -449,13 +505,22 @@ function update(changes) {
         details[key] ??= 'HTTP or HTTPS has to stay enabled';
     }
     // The names and the way they are proven have to fit together, or the certificate cannot be requested at the next start
-    const touches = ['httpsDomains', 'acmeChallenge', 'acmeDnsProvider', 'acmeDelegationZone', 'acmeCloudflareToken'].some((key) => key in changes);
+    const touches = ['httpsDomains', 'acmeChallenge', 'acmeDnsProvider', 'acmeDelegationZone', 'acmeCloudflareToken', 'acmeRfc2136Server', 'acmeRfc2136Zone', 'acmeRfc2136KeyName', 'acmeRfc2136KeySecret'].some((key) => key in changes);
     if (touches && !Object.keys(details).length && after('httpsCertSource') === 'letsencrypt') {
         if (after('acmeChallenge') === 'http-01' && after('httpsDomains').some((name) => name.startsWith('*.'))) {
             details.acmeChallenge = 'A wildcard name can only be proven through DNS: choose the DNS challenge, or remove the wildcard';
         }
         if (after('acmeChallenge') !== 'http-01' && after('acmeDnsProvider') === 'delegation' && !after('acmeDelegationZone')) {
             details.acmeDelegationZone = 'The delegation needs a zone of this server';
+        }
+        if (after('acmeChallenge') !== 'http-01' && after('acmeDnsProvider') === 'rfc2136') {
+            for (const [key, text] of [['acmeRfc2136Server', 'a name server'], ['acmeRfc2136Zone', 'a zone'], ['acmeRfc2136KeyName', 'a key name']]) {
+                if (!after(key)) details[key] = `RFC 2136 needs ${text}`;
+            }
+            if (!after('acmeRfc2136KeySecret') && !after('acmeRfc2136KeyFile')) details.acmeRfc2136KeySecret = 'RFC 2136 needs the TSIG key secret (or ODIN_ACME_RFC2136_KEY_FILE in the environment)';
+        }
+        if (after('acmeChallenge') !== 'http-01' && after('acmeDnsProvider') === 'hook' && !after('acmeHook')) {
+            details.acmeDnsProvider = 'The hook needs a program: set ODIN_ACME_HOOK in the environment (it cannot be set here, on purpose)';
         }
     }
     if (Object.keys(details).length) throw invalid(details);

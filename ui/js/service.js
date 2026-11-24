@@ -123,7 +123,7 @@ function daysBadge(days) {
     return badge(`${days} day(s) left`, days < 15 ? 'danger' : days < 30 ? 'warn' : 'ok');
 }
 
-const PROVIDERS = { zones: 'a zone of this server', delegation: 'a CNAME to a zone of this server', cloudflare: 'Cloudflare' };
+const PROVIDERS = { zones: 'a zone of this server', delegation: 'a CNAME to a zone of this server', cloudflare: 'Cloudflare', rfc2136: 'a DNS update (RFC 2136, TSIG)', hook: 'a program of the administrator' };
 
 function challengeText({ type, provider }) {
     if (type === 'http-01') return 'HTTP (port 80)';

@@ -33,7 +33,7 @@ To keep the credentials out of a file, set them in the environment of the server
 | --- | --- | --- |
 | `aesir.up` | gauge | 1 while the server runs. When the metrics stop, Heimdall shows the agent as silent |
 | `aesir.uptime`, `aesir.memory.rss` | gauge | Seconds since the start; the memory of the process in bytes |
-| `aesir.dns.queries` | counter | Answered queries, with the label `kind`: `total`, `zones`, `records`, `blocked`, `forwarded`, `refused` (a client that may not use the resolver), `failed` |
+| `aesir.dns.queries` | counter | Answered queries, with the label `kind`: `total`, `zones`, `records`, `blocked`, `forwarded`, `refused` (a client that may not use the resolver), `limited` (the answer was dropped or cut short by the rate limit), `failed` |
 | `aesir.dns.answer_time` | gauge | Milliseconds an answer took (the last sample; not sent when nothing was asked) |
 | `aesir.zones`, `aesir.zones.records`, `aesir.zones.standalone_records` | gauge | What the DNS server answers from |
 | `aesir.zones.failing` | gauge | 1 when the zones could not be read from the database |
