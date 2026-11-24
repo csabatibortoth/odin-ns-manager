@@ -15,6 +15,7 @@ const build = require('../serverService/buildInfo');
 const searchService = require('../serverService/searchService');
 const statusService = require('../serverService/statusService');
 const accessService = require('../serverService/accessService');
+const rateLimitService = require('../serverService/rateLimitService');
 const zoneService = require('../serverService/zoneService');
 const mailService = require('../serverService/mailService');
 const passwordResetService = require('../serverService/passwordResetService');
@@ -61,6 +62,8 @@ function status() {
             queries: { ...statusService.queries },
             // Who may use this server as a resolver: the list, and how many were refused
             recursion: accessService.state(),
+            // The rate limit: what was dropped, what was answered with "ask again over TCP", what did not fit in a UDP packet
+            rateLimit: rateLimitService.state(),
         },
         zones: { enabled: config.nsZonesEnabled, refresh: config.nsZoneRefresh, ...zoneService.state() },
         blocking: { refresh: config.nsBlocklistRefresh, ...blockService.state() },

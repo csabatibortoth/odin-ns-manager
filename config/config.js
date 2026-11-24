@@ -62,6 +62,26 @@ const SETTINGS = [
     },
 
     {
+        group: 'Rate limiting', key: 'nsRateLimitEnabled', env: 'ODIN_NS_RATE_LIMIT_ENABLED', type: 'bool', fallback: true, live: true,
+        label: 'Limit the answers to one client network',
+        hint: 'Protects others from this server: an attacker can send questions with a forged sender address, and the answers would go to the victim. Identical answers (UDP) to one client network are limited per second; see the settings below. TCP is never limited.',
+    },
+    {
+        group: 'Rate limiting', key: 'nsRateLimitPerSecond', env: 'ODIN_NS_RATE_LIMIT_PER_SECOND', type: 'int', fallback: 20, live: true, min: 1, max: 1000,
+        label: 'Identical answers per second to one client network',
+        hint: 'A client network is a /24 (IPv4) or a /56 (IPv6). Counted per name and type for answers, per zone for "no such name", per network for REFUSED.',
+    },
+    {
+        group: 'Rate limiting', key: 'nsRateLimitSlip', env: 'ODIN_NS_RATE_LIMIT_SLIP', type: 'int', fallback: 2, live: true, min: 0, max: 10,
+        label: 'Slip: every n-th limited answer is sent as a short "ask again over TCP"',
+        hint: 'A real client that is limited retries over TCP; the victim of a forged question gets little. 1 answers every limited question that way, 0 never.',
+    },
+    {
+        group: 'Rate limiting', key: 'nsRateLimitTrustResolvers', env: 'ODIN_NS_RATE_LIMIT_TRUST_RESOLVERS', type: 'bool', fallback: true, live: true,
+        label: 'Do not limit the clients that may use this server as a resolver',
+        hint: 'The networks of the resolver list (private networks by default) are yours: many of them ask the same name at once. Switch off to limit them too.',
+    },
+    {
         group: 'Forwarding', key: 'nsRecursionAllowed', env: 'ODIN_NS_RECURSION_ALLOWED', type: 'list', label: 'Clients that may use this server as a resolver', live: true,
         fallback: ['127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '100.64.0.0/10', '169.254.0.0/16', '::1/128', 'fc00::/7', 'fe80::/10'],
         hint: 'CIDR ranges or addresses, comma separated. Names that are not in one of your own zones are answered only to these clients; everybody else gets REFUSED. ' +
