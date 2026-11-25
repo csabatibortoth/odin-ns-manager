@@ -8,6 +8,8 @@
  * @param {Array|Function} options.options
  * @param {number} [options.minChars=1] characters needed before suggestions show
  * @param {boolean} [options.strict=false] only a value chosen from the list is accepted
+ * @param {boolean} [options.allowFreeText=false] Enter accepts the typed text instead of a suggestion
+ * @param {(text: string) => void} [options.onEnter] called with the typed text when Enter accepts free text
  * @param {(item: {value, text}) => void} [options.onSelect]
  * @param {(value) => void} [options.onChange]
  * @returns {{element: HTMLElement, input: HTMLInputElement, getValue: Function, setValue: Function}}
@@ -18,6 +20,8 @@ export function generateAutocomplete(options?: {
     options: any[] | Function;
     minChars?: number;
     strict?: boolean;
+    allowFreeText?: boolean;
+    onEnter?: (text: string) => void;
     onSelect?: (item: {
         value: any;
         text: any;
