@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.10.0** - see the [release notes](#release-notes).
+Current version: **2.10.1** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -821,6 +821,17 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.10.1
+
+#### Changed
+
+- The user interface library, Athena UI, is updated from 2.7.0 to 2.10.0. The pages of Odin look and work as before.
+- It brings one stricter check with it: an address that starts with a slash and a backslash is no longer taken for a path of this server.
+
+#### Upgrading from 2.10.0
+
+Nothing to do: no setting, data or installer changes.
 
 ### 2.10.0
 
