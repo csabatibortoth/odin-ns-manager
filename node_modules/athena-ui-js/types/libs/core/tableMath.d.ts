@@ -23,4 +23,21 @@ export function virtualWindow({ scrollTop, viewportHeight, rowHeight, total, ove
     offsetTop: number;
     offsetBottom: number;
 };
+/**
+ * Like virtualWindow, but rows can carry extra height (open detail rows): `extras` maps a row index
+ * to the pixels it adds. scrollTop and the spacers follow the real content, not index * rowHeight.
+ */
+export function expandedWindow({ scrollTop, viewportHeight, rowHeight, total, overscan, extras }: {
+    scrollTop: any;
+    viewportHeight: any;
+    rowHeight: any;
+    total: any;
+    overscan?: number;
+    extras?: {};
+}): {
+    start: number;
+    end: number;
+    offsetTop: number;
+    offsetBottom: number;
+};
 export function clampWidth(width: any, min?: number, max?: number): number;

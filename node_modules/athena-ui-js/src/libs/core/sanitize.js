@@ -14,7 +14,9 @@ const ALLOWED = new Set([
 ]);
 const RENAMED = { div: "p", strike: "s", del: "s", b: "strong", i: "em" };
 const DROPPED = new Set(["script", "style", "iframe", "object", "embed", "template", "noscript", "svg", "math", "link", "meta", "title", "form", "textarea", "select", "button", "input", "head"]);
-const SAFE_URL = /^(?:https?:|mailto:|tel:|#|\/(?!\/)|\.{1,2}\/)/i;
+// A path starts with one slash that is not followed by another slash OR a backslash: a browser reads a backslash in an
+// http(s) URL as a slash, so "/\evil.com" is "//evil.com" (another site), not a path of this one.
+const SAFE_URL = /^(?:https?:|mailto:|tel:|#|\/(?![\/\\])|\.{1,2}\/)/i;
 
 /** True for http(s), mailto, tel, anchors and relative paths. Rejects javascript:, data:, vbscript: and the like. */
 export function isSafeUrl(url) {

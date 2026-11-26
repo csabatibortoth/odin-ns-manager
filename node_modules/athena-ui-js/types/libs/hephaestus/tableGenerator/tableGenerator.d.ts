@@ -26,6 +26,7 @@
  * @param {(row: object, key: string, value, oldValue) => (boolean|void)} [options.onEdit] called after an edit
  *        of an `editable` column (double click, or Enter / F2 on the focused cell). Return false to reject it.
  * @param {(row: object) => void} [options.onRowClick]
+ * @param {(row: object) => (Node|string)} [options.expandRow] adds a toggle column; its result is a detail row directly below the row (also in a virtual table)
  * @param {string} [options.emptyText]
  * @param {(row: object, column: object) => (string|string[]|null|undefined)} [options.cellClass] CSS class(es) for a cell
  * @param {(row: object) => (string|string[]|null|undefined)} [options.rowClass] CSS class(es) for a row
@@ -53,7 +54,7 @@
  * Column extras: `render(row, value)` returns text or a Node (built by the caller, so safe by construction), `align`
  * ("left" | "center" | "right"), `title` (false switches the tooltip with the full text off).
  * @returns {{element: HTMLElement, update: Function, destroy: Function, setRows: Function, getSelected: () => object[], clearSelection: Function,
- *            getColumnWidths: () => Object<string, number>, toCsv: () => string, exportCsv: (filename?: string) => void}}
+ *            setColumns: Function, getColumns: () => string[], getColumnWidths: () => Object<string, number>, toCsv: () => string, exportCsv: (filename?: string) => void}}
  */
 export function generateTable(options?: {
     parent?: string | Element;
@@ -86,6 +87,7 @@ export function generateTable(options?: {
     onSelectionChange?: (rows: object[]) => void;
     onEdit?: (row: object, key: string, value: any, oldValue: any) => (boolean | void);
     onRowClick?: (row: object) => void;
+    expandRow?: (row: object) => (Node | string);
     emptyText?: string;
     cellClass?: (row: object, column: object) => (string | string[] | null | undefined);
     rowClass?: (row: object) => (string | string[] | null | undefined);
@@ -125,6 +127,8 @@ export function generateTable(options?: {
     setRows: Function;
     getSelected: () => object[];
     clearSelection: Function;
+    setColumns: Function;
+    getColumns: () => string[];
     getColumnWidths: () => {
         [x: string]: number;
     };

@@ -13,6 +13,7 @@ export * from "./libs/hephaestus/formGenerator/registrationFormGenerator.js";
 export * from "./libs/hephaestus/formGenerator/lostPasswordFormGenerator.js";
 export * from "./libs/hephaestus/chartGenerator/chartGenerator.js";
 export * from "./libs/hephaestus/tableGenerator/tableGenerator.js";
+export * from "./libs/hephaestus/boardGenerator/boardGenerator.js";
 export * from "./libs/hephaestus/formGenerator/changePasswordFormGenerator.js";
 export * from "./libs/hephaestus/formGenerator/formBuilder.js";
 export * from "./libs/hephaestus/formGenerator/authForms.js";
