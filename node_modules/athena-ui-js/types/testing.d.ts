@@ -1,4 +1,13 @@
 /**
+ * jsdom has no layout, so scrollIntoView is missing. A no-op stand-in is enough for a test:
+ * the call happens, and nothing throws in components that scroll an active option into view.
+ */
+export function installScrollIntoView(window: any): void;
+/** After a focused element is removed, focus goes back to the body (some jsdom versions keep the dead element). */
+export function fixActiveElement(document: any): void;
+/** Wraps the removal methods so focus is fixed as soon as an element goes away, not on the next tick. */
+export function installFocusFixup(window: any): () => void;
+/**
  * Makes a jsdom window the global one, so Athena components can run in Node.
  * The components create their events from the element's own window, so no global Event is needed for them,
  * but code written without that care (and tests) can still use `new Event(...)`.
