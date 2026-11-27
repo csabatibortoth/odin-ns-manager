@@ -11,6 +11,7 @@
  * @param {object[]|((widget: object) => object[])} [definition.configForm] field definitions (see generateField) of the settings dialog; the field `name` is the key in the config
  * @param {object} [definition.defaultConfig] config of a new widget
  * @param {string} [definition.title] title of a new widget
+ * @param {string} [definition.description] one line about the type, shown by createWidgetGallery
  * @param {{w: number, h: number}} [definition.defaultSize={w: 3, h: 2}] size in grid cells
  * @param {{w?: number, h?: number}} [definition.minSize]
  * @param {{w?: number, h?: number}} [definition.maxSize]
@@ -39,6 +40,7 @@ export function registerWidget(type: string, definition: {
     configForm?: object[] | ((widget: object) => object[]);
     defaultConfig?: object;
     title?: string;
+    description?: string;
     defaultSize?: {
         w: number;
         h: number;
@@ -56,6 +58,12 @@ export function registerWidget(type: string, definition: {
 export function unregisterWidget(type: any): boolean;
 /** The names of the registered widget types. */
 export function getWidgetTypes(): any[];
+/** What a gallery needs to know about a type (null when it is not registered). */
+export function getWidgetType(type: any): {
+    type: any;
+    title: string;
+    description: string;
+};
 /**
  * A grid of widgets.
  *
@@ -72,11 +80,12 @@ export function getWidgetTypes(): any[];
  * @param {boolean} [options.compact=true] widgets fall upwards when there is room (false: they stay where they are put)
  * @param {boolean} [options.animate=true] widgets slide to their new places (never under reduced motion)
  * @param {string} [options.label] accessible name of the dashboard
+ * @param {"push"|"swap"} [options.collision="push"] what a widget moved onto another does: push it down, or exchange places (when that fits)
  * @param {number} [options.maxWidgets=200]
  * @param {number} [options.changeDelay=0] ms to wait after a change before onChange is called (a drag is many steps: one call after the last); 0 calls it at once. `flush()` calls it now
  * @param {(layout: object, reason: string) => void} [options.onChange] called after a change made by the person or by add/remove/...: "move", "resize", "add", "remove", "duplicate", "settings", "lock", "undo", "redo"
  * @returns the handle: { element, addWidget, addWidgetWithSettings, flush, removeWidget, duplicateWidget, configureWidget, updateWidget, getWidget, getWidgets, lockWidget, setEditable, isEditable,
- *          getLayout, setLayout, undo, redo, canUndo, canRedo, getBreakpoint, destroy }
+ *          getLayout, setLayout, undo, redo, canUndo, canRedo, getBreakpoint, beginDrop, destroy }
  */
 export function createWidgetGrid(options?: {
     element: string | HTMLElement;
@@ -93,6 +102,7 @@ export function createWidgetGrid(options?: {
     compact?: boolean;
     animate?: boolean;
     label?: string;
+    collision?: "push" | "swap";
     maxWidgets?: number;
     changeDelay?: number;
     onChange?: (layout: object, reason: string) => void;

@@ -52,6 +52,37 @@ function resolve(layout, moved, depth = 0) {
 }
 
 /**
+ * The swap rule: the moved item has hit exactly one other, they exchange their places (top-left corners).
+ * Returns false when that is not a clean exchange; the caller then pushes instead.
+ */
+function swap(layout, item, from, columns, cover) {
+    const hit = layout.filter(other => collides(item, other));
+    if (hit.length !== 1 || hit[0].locked) return false;
+    const other = hit[0];
+    const common = (Math.min(item.x + item.w, other.x + other.w) - Math.max(item.x, other.x)) * (Math.min(item.y + item.h, other.y + other.h) - Math.max(item.y, other.y));
+    if (common < cover * Math.min(item.w * item.h, other.w * other.h)) return false;
+    const first = { ...item, x: Math.min(other.x, columns - item.w), y: other.y };
+    const second = { ...other, x: Math.min(from.x, columns - other.w), y: from.y };
+    // neighbours of unequal size: one takes the front of the room the two had, the other follows it
+    if (collides(first, second)) {
+        const [axis, size] = other.y === from.y ? ["x", "w"] : ["y", "h"];
+        if (other[axis] > from[axis]) {
+            second[axis] = from[axis];
+            first[axis] = from[axis] + second[size];
+        } else {
+            first[axis] = other[axis];
+            second[axis] = other[axis] + first[size];
+        }
+        if (first.x + first.w > columns || second.x + second.w > columns) return false;
+    }
+    const rest = layout.filter(entry => entry !== item && entry !== other);
+    if (collides(first, second) || rest.some(entry => collides(first, entry) || collides(second, entry))) return false;
+    Object.assign(item, first);
+    Object.assign(other, second);
+    return true;
+}
+
+/**
  * Sets the place of one item (clamped), pushes the others out of its way and, unless `compactItems` is false, lets everything fall upwards.
  * @param {object[]} items
  * @param {string} id
@@ -60,15 +91,19 @@ function resolve(layout, moved, depth = 0) {
  * @param {object} [options]
  * @param {{min?: object, max?: object}} [options.limits] size limits of this item
  * @param {boolean} [options.compactItems=true]
+ * @param {"push"|"swap"} [options.collision="push"] "swap": an item moved (not resized) onto one other exchanges places with it, when that fits
+ * @param {number} [options.swapCover=0] how much of the smaller of the two has to be covered before they swap, 0 to 1 (the grid asks for 0.5 under a pointer)
  * @returns {object[]|null} the new layout, or null when it is not possible (a locked item is in the way, or the item is locked)
  */
-export function placeItem(items, id, place, columns, { limits, compactItems = true } = {}) {
+export function placeItem(items, id, place, columns, { limits, compactItems = true, collision = "push", swapCover = 0 } = {}) {
     const layout = copy(items);
     const item = layout.find(entry => entry.id === id);
     if (!item || item.locked) return null;
+    const from = { ...item };
     Object.assign(item, clampItem({ ...item, ...place }, columns, limits));
     if (layout.some(other => other.locked && collides(item, other))) return null;
-    if (!resolve(layout, item)) return null;
+    const swapped = collision === "swap" && item.w === from.w && item.h === from.h && swap(layout, item, from, columns, swapCover);
+    if (!swapped && !resolve(layout, item)) return null;
     return compactItems ? compact(layout) : layout;
 }
 

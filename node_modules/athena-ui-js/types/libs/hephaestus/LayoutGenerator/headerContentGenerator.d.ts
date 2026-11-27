@@ -11,6 +11,7 @@ export function generateHeaderMenu(options: any): {
     close: Function;
     update: (changes?: {
         items?: object[];
+        orientation?: "horizontal" | "vertical";
     }) => object;
     destroy: Function;
 };

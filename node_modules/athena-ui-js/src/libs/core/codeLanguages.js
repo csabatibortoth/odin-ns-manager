@@ -9,7 +9,8 @@
  * @property {string} name
  * @property {string} [label] shown in the label of a code block (default: the name)
  * @property {string[]} [aliases] other names ("js" for "javascript")
- * @property {{type: string, pattern: RegExp, inner?: (text: string) => {type: string|null, text: string}[]}[]} rules `type` becomes the class `tok-<type>`;
+ * @property {{type: string, pattern: RegExp, inner?: (text: string) => {type: string|null, text: string}[], extend?: (source: string, start: number) => number, nested?: boolean}[]} rules `type` becomes the class `tok-<type>`;
+ *           `extend` gives the end of a match that a pattern cannot find (nested constructs); `nested` marks a match that holds other tokens and may span lines;
  *           the pattern must use non-capturing groups only; `inner` splits a match into smaller tokens (a tag into name and attributes)
  * @property {boolean} [ignoreCase] the rules are case-insensitive (SQL)
  * @property {boolean} [multiline] ^ and $ match at every line (YAML, C# preprocessor lines)
@@ -57,12 +58,17 @@ const MAX_LENGTH = 3_000_000;
 /**
  * Splits text into tokens: [{ type, text }]. `type` is null for plain text. Concatenating the texts gives the input back.
  * An unknown language, or a text that is too long, gives one plain token.
+ *
+ * @param {string} text
+ * @param {string|object} language
+ * @param {{start: number, end: number, nested: boolean}[]} [spans] filled with the matches that span lines, and the nested ones: an editor must not start tokenizing inside them
  */
-export function tokenize(text, language) {
+export function tokenize(text, language, spans) {
     const source = String(text ?? "");
     const lang = getLanguage(language);
     if (!lang || source.length > MAX_LENGTH) return source ? [{ type: null, text: source }] : [];
-    const { groups, expression } = compile(lang);
+    const { groups, expression: shared } = compile(lang);
+    const expression = new RegExp(shared);      // its own position: a nested construct is tokenized while this scan goes on
     const tokens = [];
     const push = (type, value) => {
         if (!value) return;
@@ -80,9 +86,15 @@ export function tokenize(text, language) {
         }
         const rule = lang.rules[groups.findLastIndex(start => match[start] !== undefined)];
         push(null, source.slice(position, match.index));
-        if (rule.inner) for (const part of rule.inner(match[0])) push(part.type, part.text);
-        else push(rule.type, match[0]);
-        position = match.index + match[0].length;
+        let value = match[0];
+        if (rule.extend) {
+            value = source.slice(match.index, Math.max(rule.extend(source, match.index), match.index + 1));
+            expression.lastIndex = match.index + value.length;
+        }
+        if (rule.inner) for (const part of rule.inner(value)) push(part.type, part.text);
+        else push(rule.type, value);
+        position = match.index + value.length;
+        if (spans && (rule.nested || value.includes("\n"))) spans.push({ start: match.index, end: position, nested: Boolean(rule.nested) });
     }
     push(null, source.slice(position));
     return tokens;
@@ -104,10 +116,90 @@ const JS_KEYWORDS = ["break", "case", "catch", "class", "const", "continue", "de
 const TS_KEYWORDS = ["interface", "type", "enum", "implements", "namespace", "declare", "readonly", "abstract", "public", "private", "protected", "keyof", "infer", "satisfies", "is", "module", "override"];
 const TS_TYPES = ["string", "number", "boolean", "any", "unknown", "never", "void", "object", "symbol", "bigint"];
 
-const jsRules = (keywords, types = []) => [
+// ---- template strings: `a ${ b(`c ${d}`) } e` cannot be matched by a pattern, so it is scanned ----
+const MAX_NESTING = 20;
+
+// a "/" where a value is expected starts a regular expression: its quotes, backticks and braces are not code
+const REGEX_LITERAL = /(?<=(?:^|[=(:,[!&|?{};]|\breturn)\s*)\/(?![*/])(?:[^/\\\n[]|\\.|\[(?:[^\]\\\n]|\\.)*\])+\/[a-z]*/;
+const REGEX_HERE = new RegExp(REGEX_LITERAL.source, "y");
+
+/** Scans the template that starts at `start`; returns its end and the ranges of the code inside its outermost ${}. */
+function scanTemplate(source, start) {
+    const code = [];
+    const stack = ["`"];           // "`": in the text of a template; a number: in the code of a ${}, counting its braces
+    let from = 0;
+    let i = start + 1;
+    while (i < source.length && stack.length) {
+        const char = source[i];
+        const top = stack.at(-1);
+        if (top === "`") {
+            if (char === "\\") i++;
+            else if (char === "`") stack.pop();
+            else if (char === "$" && source[i + 1] === "{") {
+                if (stack.length === 1) from = i + 2;
+                stack.push(0);
+                i++;
+            }
+        } else if (char === "`") stack.push("`");
+        else if (char === "{") stack[stack.length - 1]++;
+        else if (char === "}") {
+            if (top > 0) stack[stack.length - 1]--;
+            else {
+                stack.pop();
+                if (stack.length === 1) code.push([from, i]);
+            }
+        } else if (char === '"' || char === "'") {
+            while (i + 1 < source.length && source[i + 1] !== char && source[i + 1] !== "\n") i += source[i + 1] === "\\" ? 2 : 1;
+            if (source[i + 1] === char) i++;
+        } else if (char === "/" && source[i + 1] === "/") {
+            while (i + 1 < source.length && source[i + 1] !== "\n") i++;
+        } else if (char === "/" && source[i + 1] === "*") {
+            const close = source.indexOf("*/", i + 2);
+            i = close === -1 ? source.length : close + 1;
+        } else if (char === "/") {
+            REGEX_HERE.lastIndex = i;
+            if (REGEX_HERE.test(source)) i = REGEX_HERE.lastIndex - 1;
+        }
+        i++;
+    }
+    if (stack.length > 1 && typeof stack[1] === "number") code.push([from, source.length]);      // an unfinished ${
+    return { end: Math.min(i, source.length), code };
+}
+
+let nesting = 0;
+const templateRule = name => ({
+    type: "string",
+    pattern: /`/,
+    nested: true,
+    extend: (source, start) => scanTemplate(source, start).end,
+    inner(text) {
+        const { code } = scanTemplate(text, 0);
+        if (!code.length || nesting >= MAX_NESTING) return [{ type: "string", text }];
+        const parts = [];
+        let at = 0;
+        nesting++;
+        try {
+            for (const [from, to] of code) {
+                parts.push({ type: "string", text: text.slice(at, from - 2) }, { type: "punctuation", text: "${" }, ...tokenize(text.slice(from, to), name));
+                at = to;
+                if (text[to] === "}") {
+                    parts.push({ type: "punctuation", text: "}" });
+                    at++;
+                }
+            }
+        } finally {
+            nesting--;
+        }
+        parts.push({ type: "string", text: text.slice(at) });
+        return parts;
+    }
+});
+
+const jsRules = (name, keywords, types = []) => [
     rule("comment", /\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)/),
-    rule("string", new RegExp(`${STRING_DOUBLE.source}|${STRING_SINGLE.source}|\`(?:[^\`\\\\]|\\\\[\\s\\S])*\`?`)),
-    rule("string", /(?<=(?:^|[=(:,[!&|?{};]|\breturn)\s*)\/(?![*/])(?:[^/\\\n[]|\\.|\[(?:[^\]\\\n]|\\.)*\])+\/[a-z]*/),
+    rule("string", new RegExp(`${STRING_DOUBLE.source}|${STRING_SINGLE.source}`)),
+    templateRule(name),
+    rule("string", REGEX_LITERAL),
     rule("number", NUMBER_C),
     rule("keyword", words(keywords)),
     ...(types.length ? [rule("type", words(types))] : []),
@@ -153,6 +245,35 @@ const CS_TYPES = ["bool", "byte", "sbyte", "char", "decimal", "double", "float",
 const PY_KEYWORDS = ["and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda",
     "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with", "yield"];
 const PY_BUILTINS = ["print", "len", "range", "list", "dict", "set", "tuple", "str", "int", "float", "bool", "type", "isinstance", "open", "enumerate", "zip", "map", "filter", "sorted", "sum", "min", "max", "abs", "super", "self", "cls"];
+
+// ---- <script> and <style> inside HTML ----
+const TAG_ATTRIBUTES = String.raw`(?:\s+[^\s"'<>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>]+))?)*\s*\/?>`;
+const eitherCase = word => [...word].map(char => `[${char}${char.toUpperCase()}]`).join("");
+
+function embeddedLanguage(element, openTag) {
+    if (element === "style") return "css";
+    const type = /\stype\s*=\s*["']?([^"'\s>]*)/i.exec(openTag)?.[1].toLowerCase();
+    if (!type || type === "module" || /javascript|ecmascript/.test(type)) return "javascript";
+    return type === "importmap" || /json$/.test(type) ? "json" : null;      // a template or an unknown type stays plain
+}
+
+const embedded = element => {
+    const open = new RegExp(`^<${eitherCase(element)}(?=[\\s/>])${TAG_ATTRIBUTES}`);
+    const close = new RegExp(`</${eitherCase(element)}\\s*>?$`);
+    return {
+        type: "tag",
+        // up to the closing tag, or to the end of the text while it is being typed
+        pattern: new RegExp(`<${eitherCase(element)}(?=[\\s/>])${TAG_ATTRIBUTES}[\\s\\S]*?(?:</${eitherCase(element)}\\s*>|$)`),
+        nested: true,
+        inner(text) {
+            const start = open.exec(text)[0];
+            const end = close.exec(text)?.[0] ?? "";
+            const body = text.slice(start.length, text.length - end.length);
+            const language = embeddedLanguage(element, start);
+            return [...HTML_TAG_PARTS(start), ...(language ? tokenize(body, language) : [{ type: null, text: body }]), ...(end ? HTML_TAG_PARTS(end) : [])];
+        }
+    };
+};
 
 // ---- log lines (from Heimdall's log display) ----
 // Every pattern is bounded (no open-ended repetition), so a scan stays linear in the length of a line.
@@ -223,10 +344,10 @@ const LOG_RULES = [
 
 const BUILT_IN = [
     {
-        name: "javascript", label: "JavaScript", aliases: ["js", "mjs", "jsx"], ...jsBase, rules: jsRules(JS_KEYWORDS)
+        name: "javascript", label: "JavaScript", aliases: ["js", "mjs", "jsx"], ...jsBase, rules: jsRules("javascript", JS_KEYWORDS)
     },
     {
-        name: "typescript", label: "TypeScript", aliases: ["ts", "tsx"], ...jsBase, rules: jsRules([...JS_KEYWORDS, ...TS_KEYWORDS], TS_TYPES)
+        name: "typescript", label: "TypeScript", aliases: ["ts", "tsx"], ...jsBase, rules: jsRules("typescript", [...JS_KEYWORDS, ...TS_KEYWORDS], TS_TYPES)
     },
     {
         name: "json", label: "JSON", aliases: ["jsonc"], pairs: ["[]", "{}", "\"\""], indentAfter: /[{[]\s*$/,
@@ -244,6 +365,8 @@ const BUILT_IN = [
         rules: [
             rule("comment", /<!--[\s\S]*?(?:-->|$)/),
             rule("meta", /<![A-Za-z][^>]*>|<\?[\s\S]*?(?:\?>|$)/),
+            embedded("script"),
+            embedded("style"),
             { type: "tag", pattern: /<\/?[A-Za-z][\w:-]*(?:\s+[^\s"'<>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>]+))?)*\s*\/?>/, inner: HTML_TAG_PARTS },
             rule("entity", /&(?:#\d+|#x[\da-fA-F]+|\w+);/)
         ]

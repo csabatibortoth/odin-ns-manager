@@ -20,7 +20,7 @@
   },
   "homepage": "https://github.com/csabatibortoth/odin-ns-manager",
   "dependencies": {
-    "athena-ui-js": "^2.10.0",
+    "athena-ui-js": "^2.13.0",
     "bestzip": "^4.0.3",
     "body-parser": "^2.4.0",
     "bragi-ns-client": "^2.0.0",

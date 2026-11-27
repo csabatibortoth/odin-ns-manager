@@ -3,8 +3,16 @@ export function registerLanguage(language: any): void;
 /**
  * Splits text into tokens: [{ type, text }]. `type` is null for plain text. Concatenating the texts gives the input back.
  * An unknown language, or a text that is too long, gives one plain token.
+ *
+ * @param {string} text
+ * @param {string|object} language
+ * @param {{start: number, end: number, nested: boolean}[]} [spans] filled with the matches that span lines, and the nested ones: an editor must not start tokenizing inside them
  */
-export function tokenize(text: any, language: any): any[];
+export function tokenize(text: string, language: string | object, spans?: {
+    start: number;
+    end: number;
+    nested: boolean;
+}[]): any[];
 export function getLanguage(name: any): any;
 export function getLanguages(): any[];
 /** The token types the default theme gives a colour to: the classes are `tok-<type>`. */
@@ -24,6 +32,7 @@ export type CodeLanguage = {
     aliases?: string[];
     /**
      * `type` becomes the class `tok-<type>`;
+     * `extend` gives the end of a match that a pattern cannot find (nested constructs); `nested` marks a match that holds other tokens and may span lines;
      * the pattern must use non-capturing groups only; `inner` splits a match into smaller tokens (a tag into name and attributes)
      */
     rules: {
@@ -33,6 +42,8 @@ export type CodeLanguage = {
             type: string | null;
             text: string;
         }[];
+        extend?: (source: string, start: number) => number;
+        nested?: boolean;
     }[];
     /**
      * the rules are case-insensitive (SQL)

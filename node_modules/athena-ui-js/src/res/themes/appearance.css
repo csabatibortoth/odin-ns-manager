@@ -23,6 +23,7 @@
    --athena-surface / -alt          cards, table heads, striped rows
    --athena-hover                   hovered and selected rows, menu items
    --athena-overlay                 the dim layer behind a dialog
+   --athena-info-fg / -success-fg / -warning-fg / -danger-fg   the text on the status colours (4.5 : 1)
    --athena-accent / -fg            primary buttons, the active menu item, and the text on them
    --athena-focus                   outline of the element that has the keyboard focus
    --athena-danger / success / warning / info   states
@@ -52,6 +53,7 @@
     --athena-success: #1e8449;
     --athena-warning: #9a6700;
     --athena-info: #2471a3;
+    --athena-info-fg: #fff; --athena-success-fg: #fff; --athena-warning-fg: #fff; --athena-danger-fg: #fff;
     --athena-shadow: 0 4px 14px rgb(0 0 0 / 18%);
     --series-1: #4e79a7; --series-2: #d9731a; --series-3: #d0393b; --series-4: #3f9a95;
     --series-5: #3f8a3a; --series-6: #a98a00; --series-7: #94598c; --series-8: #5f6878;
@@ -75,6 +77,7 @@
     --athena-success: #4cc38a;
     --athena-warning: #e0b04a;
     --athena-info: #5b9bd5;
+    --athena-info-fg: #0b1118; --athena-success-fg: #0b1118; --athena-warning-fg: #0b1118; --athena-danger-fg: #0b1118;
     --athena-shadow: 0 4px 14px rgb(0 0 0 / 55%);
     --series-1: #6fa3d6; --series-2: #f0a04b; --series-3: #ef7b7d; --series-4: #6fcfc8;
     --series-5: #7bc576; --series-6: #f1d36a; --series-7: #c79bc0; --series-8: #a9b1c0;
@@ -100,6 +103,7 @@
     --athena-success: #005a1e;
     --athena-warning: #6b4500;
     --athena-info: #00389a;
+    --athena-info-fg: #fff; --athena-success-fg: #fff; --athena-warning-fg: #fff; --athena-danger-fg: #fff;
     --athena-shadow: none;
     --series-1: #00389a; --series-2: #a84300; --series-3: #a00000; --series-4: #006064;
     --series-5: #005a1e; --series-6: #6b4500; --series-7: #6a1b9a; --series-8: #333;
@@ -123,6 +127,7 @@
     --athena-success: #69f0ae;
     --athena-warning: #ffd740;
     --athena-info: #80d8ff;
+    --athena-info-fg: #0b1118; --athena-success-fg: #0b1118; --athena-warning-fg: #0b1118; --athena-danger-fg: #0b1118;
     --athena-shadow: none;
     --series-1: #80d8ff; --series-2: #ffd740; --series-3: #ff8a80; --series-4: #69f0ae;
     --series-5: #ea80fc; --series-6: #ffab40; --series-7: #b9f6ca; --series-8: #e0e0e0;
@@ -149,6 +154,7 @@
         --athena-success: #4cc38a;
         --athena-warning: #e0b04a;
         --athena-info: #5b9bd5;
+        --athena-info-fg: #0b1118; --athena-success-fg: #0b1118; --athena-warning-fg: #0b1118; --athena-danger-fg: #0b1118;
         --athena-shadow: 0 4px 14px rgb(0 0 0 / 55%);
     }
 }

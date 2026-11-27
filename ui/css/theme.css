@@ -339,8 +339,10 @@ body:not(.signed-in) #header_tools {
         align-items: stretch;
     }
 
+    /* Equal tabs; a label too long for its share ends in an ellipsis (Athena UI would size them by their label) */
     .athena-menu-responsive.is-tabs .menu-item {
         display: flex;
+        flex: 1;
         min-width: 0;
     }
 

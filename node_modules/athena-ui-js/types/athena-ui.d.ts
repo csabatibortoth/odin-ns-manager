@@ -35,6 +35,7 @@ export * from "./libs/core/dateRange.js";
 export * from "./libs/core/format.js";
 export * from "./libs/core/motion.js";
 export * from "./libs/hephaestus/widgetGrid/widgetGrid.js";
+export * from "./libs/hephaestus/widgetGrid/widgetGallery.js";
 export * from "./libs/core/gridLayout.js";
 export * from "./libs/hephaestus/codeGenerator/codeGenerator.js";
 export * from "./libs/hephaestus/codeGenerator/codeEditor.js";

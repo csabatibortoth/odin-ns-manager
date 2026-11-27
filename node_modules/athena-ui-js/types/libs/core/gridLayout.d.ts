@@ -17,6 +17,8 @@ export function compact(items: any): object[];
  * @param {object} [options]
  * @param {{min?: object, max?: object}} [options.limits] size limits of this item
  * @param {boolean} [options.compactItems=true]
+ * @param {"push"|"swap"} [options.collision="push"] "swap": an item moved (not resized) onto one other exchanges places with it, when that fits
+ * @param {number} [options.swapCover=0] how much of the smaller of the two has to be covered before they swap, 0 to 1 (the grid asks for 0.5 under a pointer)
  * @returns {object[]|null} the new layout, or null when it is not possible (a locked item is in the way, or the item is locked)
  */
 export function placeItem(items: object[], id: string, place: {
@@ -24,12 +26,14 @@ export function placeItem(items: object[], id: string, place: {
     y?: number;
     w?: number;
     h?: number;
-}, columns: number, { limits, compactItems }?: {
+}, columns: number, { limits, compactItems, collision, swapCover }?: {
     limits?: {
         min?: object;
         max?: object;
     };
     compactItems?: boolean;
+    collision?: "push" | "swap";
+    swapCover?: number;
 }): object[] | null;
 /**
  * The first free place of the size w x h: row-first (the first row that fits, leftmost in that
