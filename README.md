@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.10.1** - see the [release notes](#release-notes).
+Current version: **2.11.0** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -824,6 +824,23 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.11.0
+
+#### New
+
+- A third theme, **Bridge**, inspired by LCARS: swept frames, pill buttons and, from 1000 pixels, the menu in a rail at the side. It is dark until a mode is chosen, and nobody gets it without choosing it. It is chosen in the appearance menu.
+
+#### Changed
+
+- Phones and touch screens: the values of the settings are shown without scrolling sideways; buttons, fields, tabs and menu entries are at least 44 pixels; fields have 16 pixel text, so iOS does not zoom in when one gets the focus.
+- The user interface library, Athena UI, is updated from 2.10.0 to 2.13.0. The bottom tabs on a phone stay equally wide.
+
+Checked in headless Chromium only: not tried on real devices, in Safari, in Firefox or with screen readers.
+
+#### Upgrading from 2.10.1
+
+Nothing to do: no setting, data or installer changes.
 
 ### 2.10.1
 
