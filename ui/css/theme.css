@@ -760,6 +760,10 @@ dialog.dialog {
 .grid td.value {
     max-width: 420px;
     overflow-wrap: anywhere;
+}
+
+/* On the content, not the cell: the title that a stacked cell shows next to it keeps the font of the page */
+.grid td.value > .cell {
     font-family: ui-monospace, Consolas, monospace;
     font-size: 0.9rem;
 }
@@ -1450,4 +1454,12 @@ input[type="file"].input {
 .is-stacked td.actions .button {
     margin-left: 0;
     padding: 6px 12px;
+}
+
+/* A field with text under 16 pixels makes iOS zoom in when it gets the focus. :not(#_) matches every field and
+   outranks the "font: inherit" rules above. */
+@media (pointer: coarse) {
+    :is(input, select, textarea):not(#_) {
+        font-size: max(16px, 1em);
+    }
 }
