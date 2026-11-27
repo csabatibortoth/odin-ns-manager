@@ -19,6 +19,7 @@
     --athena-success: #4cc38a;
     --athena-warning: #e0b04a;
     --athena-info: #5b9bd5;
+    --athena-info-fg: #0b1118; --athena-success-fg: #0b1118; --athena-warning-fg: #0b1118; --athena-danger-fg: #0b1118;
     --athena-shadow: 0 4px 14px rgb(0 0 0 / 55%);
 }
 

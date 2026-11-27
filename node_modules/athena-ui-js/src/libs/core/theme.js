@@ -25,7 +25,8 @@ export const DEFAULT_MODES = [
 
 /**
  * @param {object} options
- * @param {{id: string, name?: string, description?: string}[]} options.themes the first one is the default
+ * @param {{id: string, name?: string, description?: string, defaultMode?: "light"|"dark"}[]} options.themes the first one is the default. `defaultMode`: the mode this
+ *        theme is shown in while the person has not chosen a mode (give theme-boot.js the same with data-dark-themes / data-light-themes)
  * @param {{id: string, name?: string}[]} [options.modes] default: system, light, dark. Ids "light" and "dark" are the ones that can be resolved
  * @param {string} [options.storageKey="athena.appearance"] localStorage key (also give it to theme-boot.js)
  * @param {string} [options.themeColorVariable] CSS variable whose value becomes <meta name="theme-color"> (the bar of a phone browser)
@@ -46,20 +47,20 @@ export function createThemeManager(options = {}) {
     const listeners = new Set();
     const systemDark = () => view.matchMedia?.("(prefers-color-scheme: dark)");
 
+    // `picked` is the mode the person chose, or null. "system" saved without `chosen` was written along with a theme (up to 2.12) and is no choice.
     const read = () => {
         try {
             const saved = JSON.parse(storage?.getItem(key) || "{}");
-            return {
-                theme: themes.some(theme => theme.id === saved.theme) ? saved.theme : themes[0].id,
-                mode: modes.some(mode => mode.id === saved.mode) ? saved.mode : "system"
-            };
+            const picked = modes.some(mode => mode.id === saved.mode) && (saved.mode !== "system" || saved.chosen === true) ? saved.mode : null;
+            return { theme: themes.some(theme => theme.id === saved.theme) ? saved.theme : themes[0].id, picked };
         } catch {
-            return { theme: themes[0].id, mode: "system" };
+            return { theme: themes[0].id, picked: null };
         }
     };
 
     let current = read();
-    const appearance = () => ({ ...current, dark: root.dataset.mode === "dark" });
+    const modeNow = () => current.picked ?? themes.find(theme => theme.id === current.theme)?.defaultMode ?? "system";
+    const appearance = () => ({ theme: current.theme, mode: modeNow(), dark: root.dataset.mode === "dark" });
 
     let fade = 0;
     let started = false;
@@ -71,7 +72,7 @@ export function createThemeManager(options = {}) {
             fade = setTimeout(() => root.classList.remove("athena-switching"), readDuration("--athena-duration-slow", root) + 60);
         }
         started = true;
-        const dark = current.mode === "dark" || (current.mode === "system" && Boolean(systemDark()?.matches));
+        const dark = modeNow() === "dark" || (modeNow() === "system" && Boolean(systemDark()?.matches));
         root.dataset.theme = current.theme;
         root.dataset.mode = dark ? "dark" : "light";
         if (options.themeColorVariable) {
@@ -91,14 +92,15 @@ export function createThemeManager(options = {}) {
     function save(change) {
         current = { ...current, ...change };
         try {
-            storage?.setItem(key, JSON.stringify(current));
+            // only a chosen mode is saved; "system" needs the mark that it was chosen
+            storage?.setItem(key, JSON.stringify({ theme: current.theme, ...(current.picked ? { mode: current.picked } : {}), ...(current.picked === "system" ? { chosen: true } : {}) }));
         } catch {
             // Not saved (private browsing, full storage), but it works until the page is closed
         }
         apply();
     }
 
-    const onSystemChange = () => { if (current.mode === "system") apply(); };
+    const onSystemChange = () => { if (modeNow() === "system") apply(); };
     const onStorage = event => {
         if (event.key !== key) return;   // another tab changed it
         current = read();
@@ -122,7 +124,7 @@ export function createThemeManager(options = {}) {
         /** Chooses a mode. Returns false (and changes nothing) for one that does not exist. */
         setMode(id) {
             if (!modes.some(mode => mode.id === id)) return false;
-            save({ mode: id });
+            save({ picked: id });
             return true;
         },
         /** Called with { theme, mode, dark } now, and whenever the look changes. Returns a function that stops it. */

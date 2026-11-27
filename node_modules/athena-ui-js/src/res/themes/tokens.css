@@ -28,6 +28,7 @@
     --athena-success: #1e8449;
     --athena-warning: #9a6700;
     --athena-info: #2471a3;
+    --athena-info-fg: #fff; --athena-success-fg: #fff; --athena-warning-fg: #fff; --athena-danger-fg: #fff;
     --athena-shadow: 0 4px 14px rgb(0 0 0 / 18%);
     /* code highlighting: at least 4.5:1 on --athena-surface-alt (a test checks it) */
     --athena-tok-comment: #5a6270;
@@ -48,7 +49,9 @@
     --athena-tok-operator: #3b4048;
     --athena-tok-punctuation: #5a6270;
 
-    /* shape and spacing */
+    /* shape and spacing. Not set here, so that each has its own value until a theme sets it:
+       --athena-radius-control (buttons, badges, pager, menu items; a large value makes pills), --athena-font (chart text),
+       --athena-font-heading and --athena-heading-transform (page, card, widget and dialog titles) */
     --athena-radius: 6px;
     --athena-border-width: 1px;
     --athena-space-1: 4px;
@@ -111,6 +114,7 @@
     --athena-success: #4cc38a;
     --athena-warning: #e0b04a;
     --athena-info: #5b9bd5;
+    --athena-info-fg: #0b1118; --athena-success-fg: #0b1118; --athena-warning-fg: #0b1118; --athena-danger-fg: #0b1118;
     --athena-shadow: 0 4px 14px rgb(0 0 0 / 55%);
     --athena-tok-comment: #8b95a5;
     --athena-tok-string: #8fd39c;
@@ -151,6 +155,7 @@
         --athena-success: #4cc38a;
         --athena-warning: #e0b04a;
         --athena-info: #5b9bd5;
+        --athena-info-fg: #0b1118; --athena-success-fg: #0b1118; --athena-warning-fg: #0b1118; --athena-danger-fg: #0b1118;
         --athena-shadow: 0 4px 14px rgb(0 0 0 / 55%);
         --athena-tok-comment: #8b95a5;
         --athena-tok-string: #8fd39c;

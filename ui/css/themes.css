@@ -9,7 +9,10 @@
    --header-*   the bar at the top (and the bar at the bottom on small screens)
    --accent     what is primary: buttons, the selected tab, the avatar
    --focus      the outline of the element that has the keyboard focus
-   --series-*   the lines of the graphs, in their fixed order */
+   --series-*   the lines of the graphs, in their fixed order
+   --bridge-*   the blocks of the frame of the Bridge theme and the text on them; its shapes are in bridge.css */
+
+@import url("bridge.css");
 
 /* ---------------------------------------------------------------- Default */
 
@@ -170,4 +173,77 @@
     --series-4: #5ccf97;
     --chart-grid: #1a1a28;
     --chart-axis: #3a3e50;
+}
+
+/* ----------------------------------------------------------------- Bridge
+   Inspired by LCARS. Dark until a mode is chosen (theme.js, theme-boot.js). */
+
+:root[data-theme="bridge"][data-mode="light"] {
+    color-scheme: light;
+    --bg: #fbf6ee;
+    --surface: #fffaf3;
+    --surface-2: #f3eadf;
+    --text: #1d1420;
+    --muted: #5a4a68;
+    --border: #98809f;
+    --accent: #8a4300;
+    --accent-text: #fff;
+    --link: #1d5a8c;
+    --focus: #2b1a8a;
+    --header-bg: #fbf6ee;
+    --header-text: #1d1420;
+    --header-accent: #8a4300;
+    --danger: #a8261c;
+    --ok: #1f6b3a;
+    --warn: #7a5200;
+    --ok-bg: #e4f1e4;
+    --warn-bg: #f9ecc8;
+    --danger-bg: #f9e0dc;
+    --shadow: none;
+    --series-1: #b35900;
+    --series-2: #1d5a8c;
+    --series-3: #7b3f7b;
+    --series-4: #1f6b3a;
+    --chart-grid: #ede3ea;
+    --chart-axis: #c3afca;
+    --bridge-a: #f0a04b;
+    --bridge-b: #c9a0c9;
+    --bridge-c: #a9a9f0;
+    --bridge-d: #f2c99c;
+    --bridge-ink: #1d1420;
+}
+
+:root[data-theme="bridge"][data-mode="dark"] {
+    color-scheme: dark;
+    --bg: #000;
+    --surface: #0f0b16;
+    --surface-2: #1f1830;
+    --text: #f5e6d3;
+    --muted: #b9a9d6;
+    --border: #715a8e;
+    --accent: #ff9c33;
+    --accent-text: #000;
+    --link: #99ccff;
+    --focus: #fff;
+    --header-bg: #000;
+    --header-text: #f5e6d3;
+    --header-accent: #ff9c33;
+    --danger: #ff7a6e;
+    --ok: #99cc99;
+    --warn: #ffcc66;
+    --ok-bg: #14261a;
+    --warn-bg: #332608;
+    --danger-bg: #3d1512;
+    --shadow: none;
+    --series-1: #ff9c33;
+    --series-2: #99ccff;
+    --series-3: #cc99cc;
+    --series-4: #99cc99;
+    --chart-grid: #241c33;
+    --chart-axis: #5c4a73;
+    --bridge-a: #ff9c33;
+    --bridge-b: #cc99cc;
+    --bridge-c: #9999ff;
+    --bridge-d: #ffcc99;
+    --bridge-ink: #000;
 }

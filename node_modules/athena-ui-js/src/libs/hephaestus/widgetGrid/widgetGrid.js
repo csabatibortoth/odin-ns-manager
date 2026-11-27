@@ -26,6 +26,7 @@ const registry = new Map();
  * @param {object[]|((widget: object) => object[])} [definition.configForm] field definitions (see generateField) of the settings dialog; the field `name` is the key in the config
  * @param {object} [definition.defaultConfig] config of a new widget
  * @param {string} [definition.title] title of a new widget
+ * @param {string} [definition.description] one line about the type, shown by createWidgetGallery
  * @param {{w: number, h: number}} [definition.defaultSize={w: 3, h: 2}] size in grid cells
  * @param {{w?: number, h?: number}} [definition.minSize]
  * @param {{w?: number, h?: number}} [definition.maxSize]
@@ -54,6 +55,12 @@ export function unregisterWidget(type) {
 /** The names of the registered widget types. */
 export function getWidgetTypes() {
     return [...registry.keys()];
+}
+
+/** What a gallery needs to know about a type (null when it is not registered). */
+export function getWidgetType(type) {
+    const def = registry.get(type);
+    return def ? { type, title: String(def.title ?? type), description: String(def.description ?? "") } : null;
 }
 
 /* ------------------CLASSES FOR PLACES------------------- */
@@ -132,11 +139,12 @@ const LAYOUT_VERSION = 1;
  * @param {boolean} [options.compact=true] widgets fall upwards when there is room (false: they stay where they are put)
  * @param {boolean} [options.animate=true] widgets slide to their new places (never under reduced motion)
  * @param {string} [options.label] accessible name of the dashboard
+ * @param {"push"|"swap"} [options.collision="push"] what a widget moved onto another does: push it down, or exchange places (when that fits)
  * @param {number} [options.maxWidgets=200]
  * @param {number} [options.changeDelay=0] ms to wait after a change before onChange is called (a drag is many steps: one call after the last); 0 calls it at once. `flush()` calls it now
  * @param {(layout: object, reason: string) => void} [options.onChange] called after a change made by the person or by add/remove/...: "move", "resize", "add", "remove", "duplicate", "settings", "lock", "undo", "redo"
  * @returns the handle: { element, addWidget, addWidgetWithSettings, flush, removeWidget, duplicateWidget, configureWidget, updateWidget, getWidget, getWidgets, lockWidget, setEditable, isEditable,
- *          getLayout, setLayout, undo, redo, canUndo, canRedo, getBreakpoint, destroy }
+ *          getLayout, setLayout, undo, redo, canUndo, canRedo, getBreakpoint, beginDrop, destroy }
  */
 export function createWidgetGrid(options = {}) {
     const element = resolveElement(options.element);
@@ -146,6 +154,7 @@ export function createWidgetGrid(options = {}) {
     const gap = wholeNumber(options.gap, 0, 100, 12);
     const compactItems = options.compact !== false;
     const animateMoves = options.animate !== false;
+    const collision = options.collision === "swap" ? "swap" : "push";
     const maxWidgets = wholeNumber(options.maxWidgets, 1, 2000, 200);
     const breakpoints = Object.entries(options.breakpoints ?? { default: { minWidth: 0, columns: options.columns ?? 12 } })
         .map(([name, value]) => ({ name, minWidth: wholeNumber(value.minWidth, 0, 100000, 0), columns: wholeNumber(value.columns, 1, 48, 12) }))
@@ -593,6 +602,7 @@ export function createWidgetGrid(options = {}) {
         widget.places[breakpoint.name] = { ...clampItem({ ...size, ...spot }, breakpoint.columns, { min: def.minSize, max: def.maxSize }) };
         const placed = placeItem([...items, { id: widgetId, ...widget.places[breakpoint.name] }], widgetId, {}, breakpoint.columns, { limits: limitsOf(widget), compactItems });
         if (placed) store(breakpoint, placed);
+        else widget.places[breakpoint.name] = { ...findFreeSpot(items, size.w, size.h, breakpoint.columns), w: size.w, h: size.h };      // a locked widget is there
         for (const bp of breakpoints) if (bp !== breakpoint) delete widget.places[bp.name];
         for (const bp of breakpoints) if (bp !== breakpoint && itemsOf(bp).length) ensurePlaces(bp);
         applyPlaces();
@@ -707,14 +717,52 @@ export function createWidgetGrid(options = {}) {
         gesture = null;
         current.stop?.();
         store(breakpoint, current.base);
-        current.widget.node.classList.remove("is-dragging");
+        endDragVisuals(current);
         applyPlaces({ slide: false });
+    }
+
+    /* ---- the placeholder and the widget that follows the pointer ---- */
+
+    function showPlaceholder(current, place) {
+        const slide = animateMoves && !prefersReducedMotion();
+        const fresh = !current.placeholder;
+        if (fresh) current.placeholder = el("div", { class: "widget-placeholder", attrs: { "aria-hidden": "true" } });
+        const node = current.placeholder;
+        const was = !fresh && slide ? node.getBoundingClientRect() : null;
+        setPlace(root, node, place);
+        if (fresh) element.prepend(node);
+        if (!was) return;
+        const now = node.getBoundingClientRect();
+        const dx = was.left - now.left;
+        const dy = was.top - now.top;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) animate(node, [{ translate: `${dx}px ${dy}px` }, { translate: "0 0" }], { duration: 160 });
+    }
+
+    // The offset is a held Web Animation, not a style attribute. It is direct manipulation (the widget is where the finger is), so it stays under reduced motion.
+    function follow(current) {
+        if (!current.pointerAt) return;
+        const node = current.widget.node;
+        const place = current.widget.places[breakpoint.name];
+        const x = current.pointerAt.dx - (place.x - current.start.x) * current.strideX;
+        const y = current.pointerAt.dy - (place.y - current.start.y) * current.strideY;
+        const frames = [{ translate: `${x}px ${y}px` }, { translate: `${x}px ${y}px` }];
+        if (current.follower) current.follower.effect.setKeyframes(frames);
+        else if (typeof node.animate === "function") {
+            current.follower = node.animate(frames, { duration: 1, fill: "forwards" });
+        }
+    }
+
+    function endDragVisuals(current) {
+        current.follower?.cancel();
+        current.placeholder?.remove();
+        current.widget?.node.classList.remove("is-dragging");
+        element.classList.remove("is-receiving");
     }
 
     /** One try of a gesture: the base layout with the item in the new place; shows it when it is possible. */
     function tryPlace(current, place) {
         const widget = current.widget;
-        const next = placeItem(current.base, widget.id, place, breakpoint.columns, { limits: limitsOf(widget), compactItems });
+        const next = placeItem(current.base, widget.id, place, breakpoint.columns, { limits: limitsOf(widget), compactItems, collision: current.reason === "move" ? collision : "push", swapCover: 0.5 });
         if (!next) return false;
         const changed = JSON.stringify(next) !== JSON.stringify(current.shown);
         current.shown = next;
@@ -727,7 +775,13 @@ export function createWidgetGrid(options = {}) {
 
     function finishGesture(current, reason) {
         gesture = null;
-        current.widget.node.classList.remove("is-dragging");
+        // where the widget was under the finger, so that it can slide from there into its place
+        const from = current.follower && animateMoves && !prefersReducedMotion() ? current.widget.node.getBoundingClientRect() : null;
+        endDragVisuals(current);
+        if (from) {
+            const now = current.widget.node.getBoundingClientRect();
+            animate(current.widget.node, [{ translate: `${from.left - now.left}px ${from.top - now.top}px` }, { translate: "0 0" }], { duration: 160 });
+        }
         orderDom();
         if (JSON.stringify(current.shown ?? current.base) !== JSON.stringify(current.base)) commit(reason);
     }
@@ -747,7 +801,7 @@ export function createWidgetGrid(options = {}) {
         const dir = resize?.dataset.dir ?? "";
         const target = resize ?? grab;
         const limits = limitsOf(widget);
-        const current = { widget, base, shown: base, pointer: true, reason: dir ? "resize" : "move" };
+        const current = { widget, base, shown: base, pointer: true, reason: dir ? "resize" : "move", start: { ...start }, strideX, strideY };
         gesture = current;
         node.classList.add("is-dragging");
         try {
@@ -758,7 +812,12 @@ export function createWidgetGrid(options = {}) {
         const move = moveEvent => {
             const dx = Math.round((moveEvent.clientX - event.clientX) / strideX);
             const dy = Math.round((moveEvent.clientY - event.clientY) / strideY);
-            if (!dir) return tryPlace(current, { x: start.x + dx, y: start.y + dy });
+            if (!dir) {
+                current.pointerAt = { dx: moveEvent.clientX - event.clientX, dy: moveEvent.clientY - event.clientY };
+                tryPlace(current, { x: start.x + dx, y: start.y + dy });
+                showPlaceholder(current, widget.places[breakpoint.name]);
+                return follow(current);
+            }
             const place = {};
             const minW = Math.max(1, limits.min?.w ?? 1);
             const minH = Math.max(1, limits.min?.h ?? 1);
@@ -796,6 +855,66 @@ export function createWidgetGrid(options = {}) {
         target.addEventListener("pointerup", up);
         target.addEventListener("pointercancel", cancel);
         target.addEventListener("lostpointercapture", up);
+    }
+
+    /* ---- dropping a new widget from outside the grid ---- */
+
+    /**
+     * Starts the drag of a new widget from outside the grid (a gallery, a toolbox of the application).
+     * Give move() the position of the pointer; the grid shows where the widget would land. drop() adds it there, cancel() leaves the grid as it was.
+     * @returns {{move: (clientX: number, clientY: number) => boolean, drop: (options?: {withSettings?: boolean}) => (string|null|Promise<string|null>), cancel: () => void}|null}
+     *          null when the type is not registered, the grid is full or another gesture is going on
+     */
+    function beginDrop(type) {
+        const def = registry.get(type);
+        if (!def || gesture || destroyed || widgets.size >= maxWidgets) return null;
+        const limits = { min: def.minSize, max: def.maxSize };
+        const size = clampItem({ x: 0, y: 0, w: def.defaultSize?.w ?? 3, h: def.defaultSize?.h ?? 2 }, breakpoint.columns, limits);
+        const id = uid("widget-drop");
+        const current = { external: true, widget: null, base: itemsOf(breakpoint), spot: null };
+        gesture = current;
+        element.classList.add("is-receiving");
+
+        const leave = () => {
+            current.spot = null;
+            current.placeholder?.remove();
+            current.placeholder = null;
+            store(breakpoint, current.base);
+            applyPlaces();
+        };
+        return {
+            move(clientX, clientY) {
+                if (gesture !== current) return false;
+                const rect = element.getBoundingClientRect();
+                const { strideX, strideY } = metrics();
+                // two rows below the last widget still count: a person drops "under" the dashboard
+                if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom + 2 * strideY) {
+                    if (current.spot) leave();
+                    return false;
+                }
+                const x = Math.floor((clientX - rect.left) / strideX) - Math.floor(size.w / 2);
+                const y = Math.floor((clientY - rect.top) / strideY);
+                const wanted = clampItem({ ...size, x, y }, breakpoint.columns, limits);
+                const next = placeItem([...current.base, { ...size, id, x: 0, y: 1e5 }], id, { x: wanted.x, y: wanted.y }, breakpoint.columns, { limits, compactItems });
+                if (!next) return Boolean(current.spot);      // a locked widget is there: keep the last place that worked
+                const item = next.find(entry => entry.id === id);
+                current.spot = { x: item.x, y: item.y, w: item.w, h: item.h };
+                store(breakpoint, next);
+                applyPlaces();
+                showPlaceholder(current, current.spot);
+                return true;
+            },
+            drop({ withSettings = false } = {}) {
+                if (gesture !== current) return null;
+                const spot = current.spot;
+                cancelGesture();
+                if (!spot) return null;
+                return withSettings ? addWidgetWithSettings(type, spot) : addWidget(type, spot);
+            },
+            cancel() {
+                if (gesture === current) cancelGesture();
+            }
+        };
     }
 
     /* ---- moving and resizing: keyboard ---- */
@@ -846,7 +965,7 @@ export function createWidgetGrid(options = {}) {
             gesture.reason = event.shiftKey ? "resize" : gesture.reason;
             if (event.shiftKey && (arrows[0] < 0 || arrows[1] < 0) && (place.w + arrows[0] < 1 || place.h + arrows[1] < 1)) return announce(translate("widget.blocked"));
             const before = JSON.stringify(widget.places[breakpoint.name]);
-            const placed = placeItem(itemsOf(breakpoint), widget.id, next, breakpoint.columns, { limits: limitsOf(widget), compactItems });
+            const placed = placeItem(itemsOf(breakpoint), widget.id, next, breakpoint.columns, { limits: limitsOf(widget), compactItems, collision: event.shiftKey ? "push" : collision });
             if (placed) {
                 store(breakpoint, placed);
                 gesture.shown = placed;
@@ -921,6 +1040,7 @@ export function createWidgetGrid(options = {}) {
         undo: () => travel(-1, "undo"), redo: () => travel(1, "redo"),
         canUndo: () => position > 0, canRedo: () => position < snapshots.length - 1,
         getBreakpoint: () => breakpoint.name,
+        beginDrop,
         destroy() {
             if (destroyed) return;
             flush();             // a change that waits for its delay is delivered, not lost

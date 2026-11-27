@@ -1,0 +1,313 @@
+/* The shapes of the Bridge theme, inspired by LCARS: flat color, swept frames
+   of changing thickness, pill buttons. It follows the Bridge theme of the
+   Athena UI demo. No logos or insignia and no fonts from elsewhere: the
+   condensed look uses what the device has. The colors are in themes.css.
+   Every rule starts with the theme, so the other themes are not touched. */
+
+html[data-theme="bridge"] {
+    --radius: 14px;
+    --athena-radius: 14px;
+    --athena-radius-control: 999px;
+}
+
+html[data-theme="bridge"] body {
+    font-family: "Roboto Condensed", "Avenir Next Condensed", "Arial Narrow", "Liberation Sans Narrow", "DejaVu Sans Condensed", sans-serif;
+    letter-spacing: 0.02em;
+}
+
+html[data-theme="bridge"] :is(.page-head h2, h3) {
+    color: var(--accent);
+    text-transform: uppercase;
+}
+
+/* The title of a page below a breadcrumb is a name that was typed (a zone): it is shown as it is */
+html[data-theme="bridge"] .breadcrumbs ~ .page-head h2 {
+    text-transform: none;
+}
+
+html[data-theme="bridge"] :is(.athena-button, .button) {
+    padding-inline: 16px;
+    border-radius: 999px;
+}
+
+html[data-theme="bridge"] :is(input.input, select.input, .athena-form input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), .athena-form select) {
+    padding-inline: 14px;
+    border-radius: 999px;
+}
+
+/* The login form of Athena UI */
+html[data-theme="bridge"] .text-filed-class {
+    padding-inline: 14px;
+    border-radius: 999px;
+}
+
+html[data-theme="bridge"] .button-filed-class {
+    border-radius: 999px;
+}
+
+html[data-theme="bridge"] dialog.dialog {
+    border-color: var(--bridge-b);
+    border-radius: 22px;
+}
+
+/* The labels of a graph keep their measure */
+html[data-theme="bridge"] svg {
+    letter-spacing: normal;
+}
+
+/* The router moves the focus to the page: the page is not a control, and a ring around it would break the frame */
+html[data-theme="bridge"] #wrapper:focus-visible {
+    outline: none;
+}
+
+/* The name of the server, in the end cap of the frame */
+html[data-theme="bridge"] #header_title_container {
+    border-radius: 999px;
+    padding: 4px 16px;
+    background: var(--bridge-a);
+    color: var(--bridge-ink);
+    text-transform: uppercase;
+}
+
+/* ---------------------------------------- Below 1000 pixels: a bar and tabs */
+
+@media (max-width: 999px) {
+    html[data-theme="bridge"] .header-container {
+        border-bottom: 6px solid var(--bridge-b);
+    }
+
+    /* The pill gives way on a narrow screen, so the button at the right stays on it */
+    html[data-theme="bridge"] #header_title_container {
+        flex: 0 1 auto;
+        padding-inline: 12px;
+    }
+
+    html[data-theme="bridge"] #header_title_text {
+        font-size: 1.05rem;
+    }
+
+    html[data-theme="bridge"] .athena-menu-responsive.is-tabs {
+        border-top: 4px solid var(--bridge-b);
+    }
+
+    html[data-theme="bridge"] .athena-menu-responsive.is-tabs .athena-menu-list > .menu-item > .menu-control.is-active,
+    html[data-theme="bridge"] .athena-menu-responsive.is-tabs .athena-menu-list > .menu-item.has-active > .menu-control {
+        border-radius: 0 0 14px 14px;
+        border-top-color: var(--bridge-a);
+        background: var(--bridge-a);
+        color: var(--bridge-ink);
+    }
+}
+
+/* ---------------------------------------- From 1000 pixels: a rail at the left, an elbow into the bar above the page, another into the footer.
+   Only for a signed-in person: without a menu there is nothing to put in the rail. */
+
+@media (min-width: 1000px) {
+    html[data-theme="bridge"] body.signed-in #container {
+        display: grid;
+        grid-template-columns: 208px minmax(0, 1fr);
+        grid-template-rows: auto 1fr auto;
+        column-gap: 10px;
+        padding: 10px;
+    }
+
+    html[data-theme="bridge"] body.signed-in #header {
+        position: static;
+        grid-column: 1;
+        grid-row: 1 / span 3;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        height: auto;
+        padding: 0;
+        background: none;
+    }
+
+    html[data-theme="bridge"] body.signed-in :is(#notices, #wrapper, #footer) {
+        grid-column: 2;
+    }
+
+    html[data-theme="bridge"] body.signed-in #header_logo_container {
+        display: flex;
+        justify-content: flex-end;
+        padding: 14px 16px 6px;
+        border-radius: 44px 0 0 0;
+        background: var(--bridge-a);
+    }
+
+    html[data-theme="bridge"] body.signed-in #header_title_container {
+        margin-top: -4px;
+        padding: 0 16px 10px;
+        border-radius: 0;
+        text-align: right;
+    }
+
+    html[data-theme="bridge"] body.signed-in #header_title_text {
+        white-space: normal;
+    }
+
+    html[data-theme="bridge"] body.signed-in #header_menu_container {
+        display: block;
+        flex: none;
+    }
+
+    html[data-theme="bridge"] #header_menu.athena-menu-vertical {
+        display: block;
+    }
+
+    html[data-theme="bridge"] #header_menu.athena-menu-vertical > .athena-menu-list {
+        gap: 4px;
+    }
+
+    html[data-theme="bridge"] #header_menu.athena-menu-vertical > .athena-menu-list > .menu-item {
+        display: block;
+    }
+
+    html[data-theme="bridge"] #header_menu.athena-menu-vertical > .athena-menu-list > .menu-item > .menu-control {
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 10px 18px;
+        border-radius: 0 999px 999px 0;
+        background: var(--bridge-c);
+        box-shadow: none;
+        color: var(--bridge-ink);
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    html[data-theme="bridge"] #header_menu.athena-menu-vertical > .athena-menu-list > .menu-item:nth-child(3n + 2) > .menu-control {
+        background: var(--bridge-d);
+    }
+
+    html[data-theme="bridge"] #header_menu.athena-menu-vertical > .athena-menu-list > .menu-item:nth-child(3n) > .menu-control {
+        background: var(--bridge-b);
+    }
+
+    /* The page that is open: another color and a bar, not the color alone */
+    html[data-theme="bridge"] #header_menu.athena-menu-vertical > .athena-menu-list > .menu-item > .menu-control.is-active,
+    html[data-theme="bridge"] #header_menu.athena-menu-vertical > .athena-menu-list > .menu-item.has-active > .menu-control {
+        background: var(--bridge-a);
+        box-shadow: inset 14px 0 0 var(--text);
+    }
+
+    html[data-theme="bridge"] #header_menu.athena-menu-vertical > .athena-menu-list > .menu-item > .menu-control:hover {
+        filter: brightness(1.1);
+    }
+
+    /* Inside the colored blocks the ring of the keyboard is drawn in the ink */
+    html[data-theme="bridge"] #header_menu.athena-menu-vertical > .athena-menu-list > .menu-item > .menu-control:focus-visible,
+    html[data-theme="bridge"] body.signed-in #header_tools .dropdown-toggle:focus-visible {
+        outline: 3px solid var(--bridge-ink);
+        outline-offset: -6px;
+    }
+
+    html[data-theme="bridge"] body.signed-in #header_tools {
+        display: flex;
+        justify-content: flex-end;
+        padding: 2px 12px;
+        background: var(--bridge-d);
+        color: var(--bridge-ink);
+    }
+
+    html[data-theme="bridge"] body.signed-in #header_tools .dropdown-toggle {
+        width: 44px;
+        height: 44px;
+    }
+
+    /* The button is at the left of the screen here: its menu opens to the right of it (it is placed by its left edge) */
+    html[data-theme="bridge"] #header_tools .dropdown-menu.athena-popover-end {
+        translate: none;
+    }
+
+    /* A long name (the signed-in person) ends in an ellipsis */
+    html[data-theme="bridge"] #header_menu.athena-menu-vertical > .athena-menu-list > .menu-item > .menu-control .menu-label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    html[data-theme="bridge"] #header_menu.athena-menu-vertical > .athena-menu-list > .menu-item > .menu-control .menu-avatar {
+        flex: none;
+    }
+
+    /* A group is aligned like a page: the arrow follows the name */
+    html[data-theme="bridge"] #header_menu.athena-menu-vertical > .athena-menu-list > .menu-item > .menu-control .menu-caret {
+        margin-left: 0;
+    }
+
+    /* The tail of the rail */
+    html[data-theme="bridge"] body.signed-in #header::after {
+        content: "";
+        flex: 1;
+        min-height: 60px;
+        border-radius: 0 0 0 44px;
+        background: var(--bridge-b);
+    }
+
+    html[data-theme="bridge"] body.signed-in #wrapper {
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        padding: 18px 20px 28px;
+        border-top: 22px solid var(--bridge-a);
+        border-radius: 36px 0 0 0;
+    }
+
+    /* Lines that can still be read on a very wide screen */
+    html[data-theme="bridge"] body.signed-in #wrapper > * {
+        max-width: 1320px;
+    }
+
+    html[data-theme="bridge"] body.signed-in #footer {
+        border-top: 0;
+        border-bottom: 12px solid var(--bridge-b);
+        border-radius: 0 0 0 28px;
+    }
+}
+
+/* The rail stays on the screen while a long page scrolls, where the screen is high enough for it and its menus */
+@media (min-width: 1000px) and (min-height: 700px) {
+    html[data-theme="bridge"] body.signed-in #header {
+        position: sticky;
+        top: 10px;
+        align-self: start;
+        height: calc(100vh - 20px);
+        height: calc(100dvh - 20px);
+    }
+}
+
+/* ---------------------------------------- Motion: each runs once and is over within seconds; none at all under reduced motion */
+
+@media (prefers-reduced-motion: no-preference) {
+    @keyframes bridge-slide { from { opacity: 0; translate: -48px 0; } }
+    @keyframes bridge-grow { from { scale: 1 0; } }
+    @keyframes bridge-wipe { from { clip-path: inset(0 100% 0 0); } }
+    @keyframes bridge-sweep { from { background-position: 0 -120px; } to { background-position: 0 calc(100% + 120px); } }
+
+    html[data-theme="bridge"] #header_title_container,
+    html[data-theme="bridge"] #wrapper .page-head h2 {
+        animation: bridge-wipe 0.4s ease-out backwards;
+    }
+
+    @media (min-width: 1000px) {
+        html[data-theme="bridge"] #header_menu.athena-menu-vertical > .athena-menu-list > .menu-item {
+            animation: bridge-slide 0.35s ease-out backwards;
+        }
+
+        html[data-theme="bridge"] #header_menu .athena-menu-list > .menu-item:nth-child(2) { animation-delay: 0.06s; }
+        html[data-theme="bridge"] #header_menu .athena-menu-list > .menu-item:nth-child(3) { animation-delay: 0.12s; }
+        html[data-theme="bridge"] #header_menu .athena-menu-list > .menu-item:nth-child(4) { animation-delay: 0.18s; }
+        html[data-theme="bridge"] #header_menu .athena-menu-list > .menu-item:nth-child(n + 5) { animation-delay: 0.24s; }
+
+        /* The tail grows, then a band of light runs down it twice */
+        html[data-theme="bridge"] body.signed-in #header::after {
+            transform-origin: top;
+            background-image: linear-gradient(180deg, transparent, rgb(255 255 255 / 45%), transparent);
+            background-repeat: no-repeat;
+            background-size: 100% 120px;
+            background-position: 0 -120px;
+            animation: bridge-grow 0.7s ease-out backwards, bridge-sweep 1.5s linear 0.4s 2;
+        }
+    }
+}

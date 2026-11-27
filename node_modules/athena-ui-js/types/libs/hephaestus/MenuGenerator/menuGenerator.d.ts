@@ -16,9 +16,12 @@ export function badgeText(value: any): string;
  *        It is never called by select() or while the menu is built.
  * @param {string} [options.active] id of the item that is the current page at the start
  * @param {boolean} [options.followHash=false] the item whose `href` equals location.hash is the active one, and follows hashchange
- * @param {"bar"|"bottom-tabs"|"responsive"} [options.layout="bar"] "bottom-tabs": a bar of tabs at the bottom of the screen,
+ * @param {"bar"|"vertical"|"bottom-tabs"|"responsive"} [options.layout="bar"] "vertical": a rail of items below each other, groups open beside it, the
+ *        Up and Down arrows move along it. "bottom-tabs": a bar of tabs at the bottom of the screen,
  *        groups open as sheets above it. "responsive": a bar on wide screens, bottom tabs on a tablet or phone (max 700px).
  * @param {number} [options.breakpoint=700] layout "responsive": the screen width in px up to which the menu is a bar of tabs at the bottom
+ * @param {"horizontal"|"vertical"} [options.orientation="horizontal"] layout "responsive": "vertical" makes it a rail on wide screens (still bottom tabs
+ *        on narrow ones). menu.update({ orientation }) changes it later
  * @param {string} [options.label] accessible name of the navigation
  *
  * Colours: on a coloured header set --athena-menu-bg, --athena-menu-fg, --athena-menu-hover and --athena-menu-active (the line under the active item)
@@ -26,7 +29,7 @@ export function badgeText(value: any): string;
  * @param {string} [options.id]
  * @param {string} [options.class]
  * @returns {{element: HTMLElement, select: (id: string|null) => void, getActive: () => string|null, setBadge: (id: string, badge) => void,
- *            close: Function, update: (changes?: {items?: object[]}) => object, destroy: Function}}
+ *            close: Function, update: (changes?: {items?: object[], orientation?: "horizontal"|"vertical"}) => object, destroy: Function}}
  */
 export function generateMenu(options?: {
     parent?: string | Element;
@@ -34,8 +37,9 @@ export function generateMenu(options?: {
     onNavigate?: (item: MenuItem, event: Event) => void;
     active?: string;
     followHash?: boolean;
-    layout?: "bar" | "bottom-tabs" | "responsive";
+    layout?: "bar" | "vertical" | "bottom-tabs" | "responsive";
     breakpoint?: number;
+    orientation?: "horizontal" | "vertical";
     label?: string;
     id?: string;
     class?: string;
@@ -47,6 +51,7 @@ export function generateMenu(options?: {
     close: Function;
     update: (changes?: {
         items?: object[];
+        orientation?: "horizontal" | "vertical";
     }) => object;
     destroy: Function;
 };

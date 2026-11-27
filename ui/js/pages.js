@@ -1031,7 +1031,9 @@ export async function settings($page) {
                             },
                         },
                     ],
-                    group.settings
+                    group.settings,
+                    'Nothing to show.',
+                    { stackAt: 720 }
                 )
             );
         };

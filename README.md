@@ -5,7 +5,7 @@ management API, its user interface and the DNS client side in one process. The
 zones and records that are managed in the browser or through the API are stored
 in MongoDB, and answered by the DNS server.
 
-Current version: **2.10.1** - see the [release notes](#release-notes).
+Current version: **2.11.0** - see the [release notes](#release-notes).
 
 ![The dashboard of the manager](docs/screenshots/dashboard.png)
 
@@ -43,7 +43,7 @@ It brings four packages together:
 | Reporting to a Heimdall Monitoring System, as the plugin `heimdall` | Available |
 | Zone transfers (AXFR) to secondary servers | Planned |
 | User interface in the browser | Available |
-| Themes: Default and Aesir, each in a light and a dark mode | Available |
+| Themes: Default, Aesir and Bridge, each in a light and a dark mode | Available |
 
 A query for a name of one of its own zones is answered by the server itself;
 every other query is forwarded to the upstream DNS servers. The zones, the users
@@ -648,11 +648,13 @@ page, choose the look of the interface: a theme, and a mode.
 | --- | --- |
 | **Default** | The look of the releases before 2.5.0: blue and grey |
 | **Aesir** | Navy `#000099`, orange `#FFA500` and grey `#71797E`, with white and black. Text is black on white, or white on black; navy is the header and the buttons in the light mode, and orange the buttons and links in the dark one, where navy would not show |
+| **Bridge** | Inspired by LCARS: swept frames, pill buttons and, from 1000 pixels, the menu in a rail at the side. Dark until a mode is chosen. Its short animations are off when the system asks for reduced motion |
 
 Every theme is made in a light and a dark mode. **Like the system** follows the
 light or dark mode of the operating system and changes with it, and is the
 default. The choice is kept in the browser, so it is the same on the sign in page,
-and is different on every device.
+and is different on every device. The Bridge theme is shown dark until a mode is
+chosen.
 
 | | |
 | --- | --- |
@@ -661,7 +663,8 @@ and is different on every device.
 
 A theme is a block of colors in `ui/css/themes.css` for each mode, and an entry
 in `THEMES` of `ui/js/theme.js`; nothing in the stylesheet `ui/css/theme.css`
-has a color of its own. The text and the background of the Aesir theme are
+has a color of its own. The shapes of the Bridge theme are in
+`ui/css/bridge.css`. The text and the background of the Aesir theme are
 checked against the contrast of WCAG AA (4.5 for text, 3 for lines and markers).
 
 | Page | Who | What it does |
@@ -821,6 +824,23 @@ temporary file; they need no database.
 | `test/` | Tests |
 
 ## Release notes
+
+### 2.11.0
+
+#### New
+
+- A third theme, **Bridge**, inspired by LCARS: swept frames, pill buttons and, from 1000 pixels, the menu in a rail at the side. It is dark until a mode is chosen, and nobody gets it without choosing it. It is chosen in the appearance menu.
+
+#### Changed
+
+- Phones and touch screens: the values of the settings are shown without scrolling sideways; buttons, fields, tabs and menu entries are at least 44 pixels; fields have 16 pixel text, so iOS does not zoom in when one gets the focus.
+- The user interface library, Athena UI, is updated from 2.10.0 to 2.13.0. The bottom tabs on a phone stay equally wide.
+
+Checked in headless Chromium only: not tried on real devices, in Safari, in Firefox or with screen readers.
+
+#### Upgrading from 2.10.1
+
+Nothing to do: no setting, data or installer changes.
 
 ### 2.10.1
 

@@ -7,6 +7,7 @@
 // see the stylesheet), nothing is styled inline, so a strict Content-Security-Policy works.
 
 import { resolveElement, uid } from "../../core/dom.js";
+import { prefersReducedMotion } from "../../core/motion.js";
 import { getLocale, translate } from "../../core/i18n.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -95,6 +96,75 @@ export function decimate(indices, values, buckets) {
         kept.push(...(low === high ? [low] : low < high ? [low, high] : [high, low]));
     }
     return kept;
+}
+
+/* ------------------MORPH------------------- */
+
+// A change of the data moves the shapes from where they were to where they are now. SVG geometry attributes are not animatable
+// everywhere, so they are written frame by frame (attributes, not styles: the strict Content-Security-Policy is fine).
+const MORPH_MS = 250;
+const MORPH_LIMIT = 4000;       // numbers: a longer series just changes
+const MORPH_PARTS = { "chart-bar": ["x", "y", "width", "height"], "chart-line": ["points"], "chart-area": ["d"], "chart-point": ["cx", "cy"] };
+const NUMBERS = /-?\d+(?:\.\d+)?(?:e-?\d+)?/g;
+
+/** The shapes of a drawing: "series|kind" -> the nodes in their order. */
+function shapesOf(svg) {
+    const found = new Map();
+    for (const kind of Object.keys(MORPH_PARTS)) {
+        for (const node of svg.querySelectorAll(`.${kind}`)) {
+            const key = `${node.closest("[data-series]")?.getAttribute("data-series")}|${kind}`;
+            if (!found.has(key)) found.set(key, []);
+            found.get(key).push(node);
+        }
+    }
+    return found;
+}
+
+/** Starts the move from the old drawing to the new one; returns a function that jumps to the end, or null when there is nothing to move. */
+function morph(from, to) {
+    const before = shapesOf(from);
+    const moves = [];
+    let size = 0;
+    for (const [key, nodes] of shapesOf(to)) {
+        const old = before.get(key);
+        if (old?.length !== nodes.length) continue;      // points added or removed: no shape to start from
+        const kind = key.split("|")[1];
+        nodes.forEach((node, i) => {
+            for (const name of MORPH_PARTS[kind]) {
+                const start = old[i].getAttribute(name);
+                const end = node.getAttribute(name);
+                if (start == null || end == null || start === end || start.replace(NUMBERS, "#") !== end.replace(NUMBERS, "#")) continue;
+                const values = start.match(NUMBERS).map(Number);
+                size += values.length;
+                moves.push({ node, name, end, values, targets: end.match(NUMBERS).map(Number) });
+            }
+        });
+    }
+    if (!moves.length || size > MORPH_LIMIT) return null;
+    const write = progress => {
+        for (const { node, name, end, values, targets } of moves) {
+            let i = 0;
+            node.setAttribute(name, progress >= 1 ? end : end.replace(NUMBERS, () => String(+(values[i] + (targets[i] - values[i++]) * progress).toFixed(2))));
+        }
+    };
+    let frame = 0;
+    let started = null;
+    const finish = () => {
+        cancelAnimationFrame(frame);
+        clearTimeout(timer);
+        write(1);
+    };
+    const step = now => {
+        started ??= now;
+        const progress = Math.min((now - started) / MORPH_MS, 1);
+        if (progress >= 1) return finish();
+        write(1 - (1 - progress) ** 3);
+        frame = requestAnimationFrame(step);
+    };
+    const timer = setTimeout(finish, MORPH_MS * 3);      // where frames are paused (a hidden tab) the end still comes
+    write(0);
+    frame = requestAnimationFrame(step);
+    return finish;
 }
 
 /* ------------------PARTS------------------- */
@@ -588,7 +658,8 @@ function buildDataTable({ labels, series, times, title, type, format = formatNum
  * @param {(range: ({from: number, to: number}|null)) => void} [options.onZoom] called when a person zooms or resets
  * @param {number} [options.maxPoints] `push` keeps at most this many points per series (the oldest are dropped)
  * @param {number[]} [options.hiddenSeries] the series (or slices) that are hidden at the start; a person hides and shows them with the legend, and a redraw keeps that
- * @param {boolean} [options.animate=true] the first drawing animates: bars grow, a line is drawn, slices pop in (not when it is redrawn, and not under reduced motion)
+ * @param {boolean} [options.animate=true] the first drawing animates: bars grow, a line is drawn, slices pop in; `update({ series })` moves bars, lines and points to their new
+ *        values (when their number is the same). Not on zoom, resize or `push`, and not under reduced motion
  * @param {boolean} [options.interactive=true] line and area charts: false leaves out the pointer layer (tooltip that follows the pointer, zoom)
  * @param {boolean} [options.gaps=false] line and area charts: a missing value (null, NaN, undefined) breaks the line, and a point on its own is a dot;
  *        without it the line goes on from the value before to the one after
@@ -632,9 +703,11 @@ export function generateChart(options = {}) {
     };
     const handle = {
         element: () => state.current.svg,
-        redraw() {
+        redraw({ move = false } = {}) {
             const next = buildChart(state.used, hooks, { animate: false });
             if (!next) return state.current?.svg;
+            state.finishMorph?.();
+            state.finishMorph = null;
             // A redraw replaces the whole SVG (every second while streaming, and when someone zooms). The keyboard focus would be lost
             // with it, so it goes to the same place in the new one: the same legend entry, the same point, or the plot.
             const old = state.current?.svg;
@@ -645,6 +718,7 @@ export function generateChart(options = {}) {
                 old.replaceWith(next.svg);
                 state.current.table?.remove();
                 if (next.table) next.svg.after(next.table);
+                if (move && !prefersReducedMotion()) state.finishMorph = morph(old, next.svg);
             }
             state.current = next;
             if (active) {
@@ -654,11 +728,14 @@ export function generateChart(options = {}) {
             return attach(next.svg);
         },
         update(changes = {}) {
+            // only new data moves: a new size, type or zoom is simply drawn
+            const move = state.used.animate !== false && changes.animate !== false && ("series" in changes) && !["type", "width", "height", "zoomRange"].some(name => name in changes && changes[name] !== state.used[name]);
             state.used = { ...state.used, ...changes };
-            return handle.redraw();
+            return handle.redraw({ move });
         },
         destroy() {
             resizing?.disconnect();
+            state.finishMorph?.();
             state.current.svg.remove();
             state.current.table?.remove();
         },
