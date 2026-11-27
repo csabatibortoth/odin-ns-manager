@@ -20,7 +20,7 @@ import { queries, clients } from './monitoring.js';
 import { backup, certificate, sync, plugins } from './service.js';
 import * as ui from './ui.js';
 import { icon } from './icons.js';
-import { THEMES, MODES, setTheme, setMode, onAppearanceChange, refresh as refreshTheme } from './theme.js';
+import { THEMES, MODES, appearance, setTheme, setMode, onAppearanceChange, refresh as refreshTheme } from './theme.js';
 
 // The pages of the menu, in its groups. admin: only for admins; monitor: only
 // for the roles of the monitoring; own: only when users sign in; when: any other condition
@@ -92,6 +92,9 @@ function currentPath() {
 
 let menu = null;
 
+// The Bridge theme has the menu in a rail at the side (below 1000 pixels it is the bar of tabs, as everywhere)
+const orientationOf = (theme) => (theme === 'bridge' ? 'vertical' : 'horizontal');
+
 // A page of the menu is a link; an action (sign out, the API docs) is a button
 const entryOf = (item) => ({ id: itemId(item), label: item.label, ...(item.action ? {} : { href: hrefOf(item) }) });
 
@@ -127,6 +130,7 @@ function buildMenu() {
             // A bar in the header on a wide screen (1000 pixels and more), tabs at the bottom of the screen below that
             layout: 'responsive',
             breakpoint: 999,
+            orientation: orientationOf(appearance().theme),
             followHash: true,
             // A page opens by its link (the router listens to the address); an action is run
             onNavigate: (entry) => menuList().find((candidate) => itemId(candidate) === entry.id)?.action?.(),
@@ -391,6 +395,7 @@ async function start() {
 
     $('#wrapper').before(el('div', { id: 'notices', 'aria-live': 'polite' }));
     addAppearanceMenu();
+    onAppearanceChange(({ theme }) => menu?.update({ orientation: orientationOf(theme) }));
     refreshTheme(); // the stylesheet is loaded now: the bar of the browser takes its color
     events.userChanged = buildMenu;
     events.signedOut = signedOut;

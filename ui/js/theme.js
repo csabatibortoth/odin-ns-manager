@@ -10,6 +10,8 @@ import { createThemeManager } from '../vendor/athena-ui/theme.js';
 export const THEMES = [
     { id: 'default', name: 'Default', description: 'Blue and grey' },
     { id: 'aesir', name: 'Aesir', description: 'Navy, orange and grey' },
+    // defaultMode: used while no mode has been chosen; theme-boot.js knows it too
+    { id: 'bridge', name: 'Bridge', description: 'Inspired by LCARS: swept frames, dark by default', defaultMode: 'dark' },
 ];
 
 export const MODES = [
