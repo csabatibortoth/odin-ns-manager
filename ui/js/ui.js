@@ -122,14 +122,14 @@ export function showError(err) {
 
 // columns: [{ title, cell: (row) => text or element(s), class }]
 // The table of Athena UI draws it; a cell is a block of its own, so it can hold a badge, a link or buttons. Every cell has the title of its column
-// in data-label: on a narrow screen (a table under 640 px) every row is shown as a block, with the titles next to the values: the option stack
-export function table(columns, rows, empty = 'Nothing to show.') {
+// in data-label: on a narrow screen (a table under 640 px, or under stackAt) every row is shown as a block, with the titles next to the values: the option stack
+export function table(columns, rows, empty = 'Nothing to show.', { stackAt = 640 } = {}) {
     if (!rows.length) return el('p', { class: 'empty', text: empty });
     const $holder = el('div', { class: 'table-scroll' });
     generateTable({
         parent: $holder[0],
         class: 'grid',
-        stack: 640,
+        stack: stackAt,
         sortable: false,
         columns: columns.map((column, index) => ({
             key: `column${index}`,

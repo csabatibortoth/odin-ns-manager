@@ -575,19 +575,49 @@ dialog.dialog {
     cursor: default;
 }
 
-/* Large enough for a finger on a touch screen */
+/* Large enough for a finger on a touch screen: 44 pixels */
 @media (pointer: coarse) {
     .athena-button,
     .button,
+    .button-filed-class,
     .input,
+    .text-filed-class,
+    .athena-form input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+    .athena-form select,
     .page-button,
-    .tab {
-        min-height: 40px;
+    .tab,
+    .dropdown-item,
+    .dialog-close,
+    .alert-close,
+    summary {
+        min-height: 44px;
     }
 
-    .athena-button.button-small,
-    .button.small {
-        min-height: 34px;
+    .athena-button,
+    .button,
+    .page-button,
+    .tab,
+    .dialog-close,
+    .alert-close {
+        min-width: 44px;
+    }
+
+    summary {
+        line-height: 44px;
+    }
+
+    /* A box or a radio button is ticked by its whole label */
+    label:has(> input:is([type="checkbox"], [type="radio"])) {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    label > input:is([type="checkbox"], [type="radio"]) {
+        flex: none;
+        margin: 0;
     }
 }
 
@@ -1097,9 +1127,9 @@ dialog.dialog {
     margin: 0;
 }
 
+/* Under 720 pixels these tables are stacked (stackAt in pages.js), so they are never wider than their room */
 .settings-group .grid {
     table-layout: fixed;
-    min-width: 720px;
 }
 
 .settings-group .grid th:nth-child(1) { width: 36%; }
@@ -1385,39 +1415,39 @@ input[type="file"].input {
     .form.inline {
         max-width: none;
     }
+}
 
-    /* Tables: the option stack of Athena UI shows a row as a block (class is-stacked on the table). The cell with the buttons is Odin's own. */
-    /* Odin's own cell rules (padding, border) are not in a layer and beat the ones of Athena: the cell of a block has none */
-    .is-stacked .grid td {
-        padding: 3px 0;
-        border: 0;
-    }
+/* Tables stacked by their class, at any width of the screen (the settings tables stack on wider screens too) */
+/* Tables: the option stack of Athena UI shows a row as a block (class is-stacked on the table). The cell with the buttons is Odin's own. */
+/* Odin's own cell rules (padding, border) are not in a layer and beat the ones of Athena: the cell of a block has none */
+.is-stacked .grid td {
+    padding: 3px 0;
+    border: 0;
+}
 
-    .is-stacked .grid td > .cell {
-        min-width: 0;
-    }
+.is-stacked .grid td > .cell {
+    min-width: 0;
+}
 
-    .is-stacked td.actions {
-        justify-content: flex-end;
-        padding-top: 8px;
-        white-space: normal;
-    }
+.is-stacked td.actions {
+    justify-content: flex-end;
+    padding-top: 8px;
+    white-space: normal;
+}
 
-    .is-stacked td.actions > .cell {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 6px;
-    }
+.is-stacked td.actions > .cell {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
 
-    .is-stacked td.actions > .cell:empty {
-        display: none;
-    }
+.is-stacked td.actions > .cell:empty {
+    display: none;
+}
 
-    .is-stacked td.actions .button {
-        margin-left: 0;
-        padding: 6px 12px;
-    }
-
+.is-stacked td.actions .button {
+    margin-left: 0;
+    padding: 6px 12px;
 }
