@@ -49,6 +49,29 @@ A query for a name of one of its own zones is answered by the server itself;
 every other query is forwarded to the upstream DNS servers. The zones, the users
 and the service itself are managed in the browser, or through the API.
 
+## Tests
+
+Run the server-side test suite with `npm test`. The browser checks live in
+`test/ui`; start a disposable Odin instance with authentication disabled, then
+run `npm run test:ui` to exercise the 13 real-input flows. The scripts accept
+the HTTP port as their final argument (default `45461`).
+
+`npm run test:ui:probe` checks a page for browser errors, and
+`npm run test:ui:shots -- <folder> [port]` captures the interface. The other
+scripts in `test/ui` support seeding, traffic, authentication checks, and
+README screenshots. They require a local Chrome/Chromium executable; set
+`CHROME_PATH` when it is not found automatically.
+
+**Run these only against a throwaway instance** (its own database, settings file
+and ports), never against a server in use: `odin-e2e.mjs` creates and deletes a
+zone, `odin-shots.mjs` adds example zone data to an empty database,
+`odin-readme-shots.mjs` changes the server name to `odin-demo`, and
+`odin-seed.mjs` creates users and records, listens on port 45470 and sends DNS
+traffic.
+
+The browser tests drive Chrome through the CDP helper in `test/ui/cdp.mjs`.
+Its MIT license is included alongside it.
+
 ## Requirements
 
 - Node.js 22 or newer

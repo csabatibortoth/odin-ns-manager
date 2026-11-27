@@ -5,6 +5,9 @@
   "main": "server.js",
   "scripts": {
     "test": "node --test \"test/*.test.js\"",
+    "test:ui": "node test/ui/odin-e2e.mjs",
+    "test:ui:probe": "node test/ui/odin-probe.mjs",
+    "test:ui:shots": "node test/ui/odin-shots.mjs",
     "start": "node server.js",
     "build-info": "node services/serverService/buildInfo.js",
     "dev": "nodemon server.js"
